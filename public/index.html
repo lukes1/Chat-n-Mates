@@ -1,0 +1,55 @@
+﻿<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChatWave</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">ChatWave</div>
+      <div class="me" id="meLabel">Verbinde...</div>
+      <h3>Kontakte</h3>
+      <ul id="contacts" class="contacts"></ul>
+    </aside>
+
+    <main class="main">
+      <header class="chat-header">
+        <div id="chatTitle">Kontakt wählen</div>
+        <div class="call-actions">
+          <button id="audioCallBtn" disabled>Anruf</button>
+          <button id="videoCallBtn" disabled>Video</button>
+          <button id="hangupBtn" disabled>Auflegen</button>
+        </div>
+      </header>
+
+      <section id="messages" class="messages"></section>
+
+      <form id="chatForm" class="chat-form">
+        <input id="chatInput" type="text" placeholder="Nachricht schreiben..." maxlength="2000" autocomplete="off" />
+        <button type="submit">Senden</button>
+      </form>
+    </main>
+
+    <aside class="status-panel">
+      <h3>Status (24h)</h3>
+      <form id="statusForm" class="status-form">
+        <input id="statusInput" type="text" placeholder="Neuer Status..." maxlength="300" />
+        <button type="submit">Posten</button>
+      </form>
+      <ul id="statusList" class="status-list"></ul>
+
+      <div class="media-box">
+        <div class="media-title">Call</div>
+        <video id="localVideo" autoplay playsinline muted></video>
+        <video id="remoteVideo" autoplay playsinline></video>
+      </div>
+    </aside>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

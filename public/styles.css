@@ -1,0 +1,201 @@
+﻿:root {
+  --bg: #0d1516;
+  --panel: #102126;
+  --soft: #18343d;
+  --accent: #26d367;
+  --text: #e7f7f1;
+  --muted: #9dc2b4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Segoe UI, Tahoma, sans-serif;
+  background: linear-gradient(140deg, #0b1f21, #101918 55%, #123934);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 260px minmax(300px, 1fr) 320px;
+  gap: 14px;
+  padding: 14px;
+  min-height: 100vh;
+}
+
+.sidebar,
+.main,
+.status-panel {
+  background: rgba(16, 33, 38, 0.95);
+  border: 1px solid #21424a;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.sidebar,
+.status-panel {
+  padding: 14px;
+}
+
+.brand {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.me {
+  color: var(--muted);
+  margin: 6px 0 16px;
+}
+
+h3 {
+  margin: 8px 0;
+}
+
+.contacts,
+.status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-btn {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: var(--soft);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.contact-btn.active {
+  outline: 2px solid var(--accent);
+}
+
+.main {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid #21424a;
+}
+
+.call-actions {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  background: #1d4e42;
+  color: var(--text);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.messages {
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bubble {
+  max-width: 80%;
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+.bubble.out {
+  align-self: flex-end;
+  background: #166436;
+}
+
+.bubble.in {
+  align-self: flex-start;
+  background: #294a57;
+}
+
+.bubble small {
+  display: block;
+  margin-top: 4px;
+  color: #bed8d1;
+}
+
+.chat-form,
+.status-form {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+}
+
+input {
+  flex: 1;
+  background: #0f2b33;
+  border: 1px solid #325760;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.status-item {
+  background: var(--soft);
+  border-radius: 10px;
+  padding: 9px;
+}
+
+.media-box {
+  margin-top: 12px;
+  border-top: 1px solid #21424a;
+  padding-top: 10px;
+}
+
+.media-title {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+video {
+  width: 100%;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background: #000;
+  max-height: 180px;
+}
+
+@media (max-width: 1100px) {
+  .app {
+    grid-template-columns: 220px 1fr;
+  }
+
+  .status-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+}
