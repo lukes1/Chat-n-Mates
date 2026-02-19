@@ -75,8 +75,7 @@ body {
   grid-template-columns: 260px minmax(300px, 1fr) 320px;
   gap: 14px;
   padding: 14px;
-  min-height: 100vh;
-  height: 100vh;
+  min-height: 100dvh;
 }
 
 .sidebar,
@@ -190,6 +189,13 @@ h3 {
 .main {
   display: grid;
   grid-template-rows: auto auto 1fr;
+  min-height: 0;
+}
+
+#chatView {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  min-height: 0;
 }
 
 .main-tabs {
@@ -239,6 +245,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
 }
 
 .bubble {
@@ -273,6 +280,7 @@ button:disabled {
 #statusView {
   overflow-y: auto;
   padding: 0 12px 12px;
+  min-height: 0;
 }
 
 input {
