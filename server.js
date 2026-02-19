@@ -1,4 +1,5 @@
-﻿const express = require("express");
+﻿const crypto = require("crypto");
+const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
@@ -8,12 +9,18 @@ const server = http.createServer(app);
 const io = new Server(server);
 const ENABLE_BOTS = process.env.ENABLE_BOTS === "true";
 
+app.use(express.json());
 app.use(express.static("public"));
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
+const accountsByUsername = new Map();
+const accountsById = new Map();
+const sessions = new Map();
+
 const users = new Map();
+const socketsByAccount = new Map();
 const privateMessages = [];
 const statuses = [];
 const botUsers = [
@@ -27,6 +34,68 @@ const botUsersById = new Map(botUsers.map((bot) => [bot.id, bot]));
 const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MESSAGES = 1000;
 const BOT_ACTIVE_INTERVAL_MS = 25 * 1000;
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function normalizeUsername(username) {
+  return String(username || "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 30);
+}
+
+function hashPassword(password, salt) {
+  return crypto.scryptSync(password, salt, 64).toString("hex");
+}
+
+function createAccount(username, password) {
+  const normalizedUsername = normalizeUsername(username);
+  const safePassword = String(password || "");
+
+  if (!/^[a-z0-9._-]{3,30}$/.test(normalizedUsername)) {
+    return { ok: false, error: "Username: 3-30 Zeichen, nur a-z, 0-9, ., _, -" };
+  }
+  if (safePassword.length < 6 || safePassword.length > 100) {
+    return { ok: false, error: "Passwort muss 6-100 Zeichen haben" };
+  }
+  if (accountsByUsername.has(normalizedUsername)) {
+    return { ok: false, error: "Username existiert bereits" };
+  }
+
+  const salt = crypto.randomBytes(16).toString("hex");
+  const passwordHash = hashPassword(safePassword, salt);
+  const account = {
+    id: `usr-${uuidv4()}`,
+    username: normalizedUsername,
+    salt,
+    passwordHash,
+    createdAt: Date.now(),
+  };
+
+  accountsByUsername.set(normalizedUsername, account);
+  accountsById.set(account.id, account);
+  return { ok: true, account };
+}
+
+function issueSession(accountId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  sessions.set(token, {
+    accountId,
+    expiresAt: Date.now() + TOKEN_TTL_MS,
+  });
+  return token;
+}
+
+function getSession(token) {
+  const session = sessions.get(token);
+  if (!session) {
+    return null;
+  }
+  if (session.expiresAt <= Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+  return session;
+}
 
 function getVisibleStatuses() {
   const now = Date.now();
@@ -34,14 +103,17 @@ function getVisibleStatuses() {
 }
 
 function getUsersPayload() {
-  const liveUsers = Array.from(users.values()).map((user) => ({
-    id: user.id,
-    name: user.name,
-    online: true,
-  }));
+  const onlineAccounts = Array.from(socketsByAccount.keys())
+    .map((accountId) => accountsById.get(accountId))
+    .filter(Boolean)
+    .map((account) => ({
+      id: account.id,
+      name: account.username,
+      online: true,
+    }));
 
   if (!ENABLE_BOTS) {
-    return liveUsers;
+    return onlineAccounts;
   }
 
   const bots = botUsers.map((bot) => ({
@@ -50,7 +122,31 @@ function getUsersPayload() {
     online: true,
   }));
 
-  return [...liveUsers, ...bots];
+  return [...onlineAccounts, ...bots];
+}
+
+function trimMessages() {
+  if (privateMessages.length > MAX_MESSAGES) {
+    privateMessages.splice(0, privateMessages.length - MAX_MESSAGES);
+  }
+}
+
+function broadcastUsers() {
+  io.emit("users-updated", getUsersPayload());
+}
+
+function broadcastStatuses() {
+  io.emit("statuses-updated", getVisibleStatuses());
+}
+
+function emitToAccount(accountId, eventName, payload) {
+  const socketIds = socketsByAccount.get(accountId);
+  if (!socketIds) {
+    return;
+  }
+  socketIds.forEach((socketId) => {
+    io.to(socketId).emit(eventName, payload);
+  });
 }
 
 function buildBotReply(botName, inputText) {
@@ -82,19 +178,69 @@ function buildProactiveBotMessage(botName) {
   return cannedMessages[Math.floor(Math.random() * cannedMessages.length)];
 }
 
-function trimMessages() {
-  if (privateMessages.length > MAX_MESSAGES) {
-    privateMessages.splice(0, privateMessages.length - MAX_MESSAGES);
+app.post("/auth/register", (req, res) => {
+  const { username, password } = req.body || {};
+  const result = createAccount(username, password);
+
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
   }
-}
 
-function broadcastUsers() {
-  io.emit("users-updated", getUsersPayload());
-}
+  const token = issueSession(result.account.id);
+  return res.status(201).json({
+    token,
+    user: {
+      id: result.account.id,
+      username: result.account.username,
+    },
+  });
+});
 
-function broadcastStatuses() {
-  io.emit("statuses-updated", getVisibleStatuses());
-}
+app.post("/auth/login", (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  const password = String(req.body?.password || "");
+  const account = accountsByUsername.get(username);
+
+  if (!account) {
+    return res.status(401).json({ error: "Login fehlgeschlagen" });
+  }
+
+  const expectedHash = hashPassword(password, account.salt);
+  if (expectedHash !== account.passwordHash) {
+    return res.status(401).json({ error: "Login fehlgeschlagen" });
+  }
+
+  const token = issueSession(account.id);
+  return res.status(200).json({
+    token,
+    user: {
+      id: account.id,
+      username: account.username,
+    },
+  });
+});
+
+app.get("/auth/me", (req, res) => {
+  const authHeader = String(req.headers.authorization || "");
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const session = getSession(token);
+
+  if (!session) {
+    return res.status(401).json({ error: "Nicht eingeloggt" });
+  }
+
+  const account = accountsById.get(session.accountId);
+  if (!account) {
+    return res.status(401).json({ error: "Nicht eingeloggt" });
+  }
+
+  return res.status(200).json({
+    user: {
+      id: account.id,
+      username: account.username,
+    },
+  });
+});
 
 setInterval(() => {
   const before = statuses.length;
@@ -109,55 +255,94 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+setInterval(() => {
+  for (const [token, session] of sessions.entries()) {
+    if (session.expiresAt <= Date.now()) {
+      sessions.delete(token);
+    }
+  }
+}, 10 * 60 * 1000);
+
 if (ENABLE_BOTS) {
   setInterval(() => {
-    const liveUsers = Array.from(users.values());
-    if (!liveUsers.length) {
+    const onlineAccountIds = Array.from(socketsByAccount.keys());
+    if (!onlineAccountIds.length) {
       return;
     }
 
-    const randomUser = liveUsers[Math.floor(Math.random() * liveUsers.length)];
-    const randomBot = botUsers[Math.floor(Math.random() * botUsers.length)];
+    const randomAccountId = onlineAccountIds[Math.floor(Math.random() * onlineAccountIds.length)];
+    const randomAccount = accountsById.get(randomAccountId);
+    if (!randomAccount) {
+      return;
+    }
 
+    const randomBot = botUsers[Math.floor(Math.random() * botUsers.length)];
     const proactiveMessage = {
       id: uuidv4(),
       from: randomBot.id,
       fromName: randomBot.name,
-      to: randomUser.id,
-      toName: randomUser.name,
+      to: randomAccount.id,
+      toName: randomAccount.username,
       text: buildProactiveBotMessage(randomBot.name),
       timestamp: Date.now(),
     };
 
     privateMessages.push(proactiveMessage);
     trimMessages();
-    io.to(randomUser.id).emit("private-message", proactiveMessage);
+    emitToAccount(randomAccount.id, "private-message", proactiveMessage);
   }, BOT_ACTIVE_INTERVAL_MS);
 }
 
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  const session = getSession(token);
+
+  if (!session) {
+    next(new Error("unauthorized"));
+    return;
+  }
+
+  const account = accountsById.get(session.accountId);
+  if (!account) {
+    next(new Error("unauthorized"));
+    return;
+  }
+
+  socket.account = account;
+  next();
+});
+
 io.on("connection", (socket) => {
-  socket.on("register", ({ name }) => {
-    const safeName = String(name || "User").trim().slice(0, 30) || "User";
-
-    users.set(socket.id, {
-      id: socket.id,
-      name: safeName,
-    });
-
-    socket.emit("bootstrap", {
-      selfId: socket.id,
-      users: getUsersPayload(),
-      messages: privateMessages,
-      statuses: getVisibleStatuses(),
-    });
-
-    broadcastUsers();
-    broadcastStatuses();
+  const account = socket.account;
+  users.set(socket.id, {
+    socketId: socket.id,
+    accountId: account.id,
+    name: account.username,
   });
+
+  if (!socketsByAccount.has(account.id)) {
+    socketsByAccount.set(account.id, new Set());
+  }
+  socketsByAccount.get(account.id).add(socket.id);
+
+  socket.emit("bootstrap", {
+    selfId: account.id,
+    users: getUsersPayload(),
+    messages: privateMessages,
+    statuses: getVisibleStatuses(),
+  });
+
+  broadcastUsers();
+  broadcastStatuses();
 
   socket.on("private-message", ({ to, text }) => {
     const fromUser = users.get(socket.id);
-    const targetUser = users.get(to) || (ENABLE_BOTS ? botUsersById.get(to) : null);
+    const targetAccount = accountsById.get(to);
+    const targetUser = targetAccount
+      ? { id: targetAccount.id, name: targetAccount.username }
+      : ENABLE_BOTS
+        ? botUsersById.get(to)
+        : null;
     const safeText = String(text || "").trim().slice(0, 2000);
 
     if (!fromUser || !targetUser || !safeText) {
@@ -166,7 +351,7 @@ io.on("connection", (socket) => {
 
     const message = {
       id: uuidv4(),
-      from: fromUser.id,
+      from: fromUser.accountId,
       fromName: fromUser.name,
       to: targetUser.id,
       toName: targetUser.name,
@@ -177,7 +362,7 @@ io.on("connection", (socket) => {
     privateMessages.push(message);
     trimMessages();
 
-    socket.emit("private-message", message);
+    emitToAccount(fromUser.accountId, "private-message", message);
 
     if (ENABLE_BOTS && botUsersById.has(targetUser.id)) {
       setTimeout(() => {
@@ -185,34 +370,34 @@ io.on("connection", (socket) => {
           id: uuidv4(),
           from: targetUser.id,
           fromName: targetUser.name,
-          to: fromUser.id,
+          to: fromUser.accountId,
           toName: fromUser.name,
           text: buildBotReply(targetUser.name, safeText),
           timestamp: Date.now(),
         };
         privateMessages.push(reply);
         trimMessages();
-        socket.emit("private-message", reply);
+        emitToAccount(fromUser.accountId, "private-message", reply);
       }, 450 + Math.floor(Math.random() * 700));
       return;
     }
 
-    io.to(targetUser.id).emit("private-message", message);
+    emitToAccount(targetUser.id, "private-message", message);
   });
 
   socket.on("status-create", ({ text }) => {
-    const user = users.get(socket.id);
+    const fromUser = users.get(socket.id);
     const safeText = String(text || "").trim().slice(0, 300);
 
-    if (!user || !safeText) {
+    if (!fromUser || !safeText) {
       return;
     }
 
     const now = Date.now();
     const status = {
       id: uuidv4(),
-      userId: user.id,
-      userName: user.name,
+      userId: fromUser.accountId,
+      userName: fromUser.name,
       text: safeText,
       createdAt: now,
       expiresAt: now + STATUS_TTL_MS,
@@ -224,12 +409,14 @@ io.on("connection", (socket) => {
 
   socket.on("call-offer", ({ to, offer, withVideo }) => {
     const fromUser = users.get(socket.id);
-    if (!fromUser || !users.has(to)) {
+    const targetAccount = accountsById.get(to);
+
+    if (!fromUser || !targetAccount) {
       return;
     }
 
-    io.to(to).emit("call-offer", {
-      from: socket.id,
+    emitToAccount(targetAccount.id, "call-offer", {
+      from: fromUser.accountId,
       fromName: fromUser.name,
       offer,
       withVideo: !!withVideo,
@@ -237,53 +424,75 @@ io.on("connection", (socket) => {
   });
 
   socket.on("call-answer", ({ to, answer }) => {
-    if (!users.has(socket.id) || !users.has(to)) {
+    const fromUser = users.get(socket.id);
+    const targetAccount = accountsById.get(to);
+
+    if (!fromUser || !targetAccount) {
       return;
     }
 
-    io.to(to).emit("call-answer", {
-      from: socket.id,
+    emitToAccount(targetAccount.id, "call-answer", {
+      from: fromUser.accountId,
       answer,
     });
   });
 
   socket.on("ice-candidate", ({ to, candidate }) => {
-    if (!users.has(socket.id) || !users.has(to)) {
+    const fromUser = users.get(socket.id);
+    const targetAccount = accountsById.get(to);
+
+    if (!fromUser || !targetAccount) {
       return;
     }
 
-    io.to(to).emit("ice-candidate", {
-      from: socket.id,
+    emitToAccount(targetAccount.id, "ice-candidate", {
+      from: fromUser.accountId,
       candidate,
     });
   });
 
   socket.on("call-reject", ({ to }) => {
-    const user = users.get(socket.id);
-    if (!user || !users.has(to)) {
+    const fromUser = users.get(socket.id);
+    const targetAccount = accountsById.get(to);
+
+    if (!fromUser || !targetAccount) {
       return;
     }
 
-    io.to(to).emit("call-reject", {
-      from: socket.id,
-      fromName: user.name,
+    emitToAccount(targetAccount.id, "call-reject", {
+      from: fromUser.accountId,
+      fromName: fromUser.name,
     });
   });
 
   socket.on("call-end", ({ to }) => {
-    const user = users.get(socket.id);
-    if (!user || !users.has(to)) {
+    const fromUser = users.get(socket.id);
+    const targetAccount = accountsById.get(to);
+
+    if (!fromUser || !targetAccount) {
       return;
     }
 
-    io.to(to).emit("call-end", {
-      from: socket.id,
-      fromName: user.name,
+    emitToAccount(targetAccount.id, "call-end", {
+      from: fromUser.accountId,
+      fromName: fromUser.name,
     });
   });
 
   socket.on("disconnect", () => {
+    const disconnectedUser = users.get(socket.id);
     users.delete(socket.id);
+
+    if (disconnectedUser) {
+      const socketSet = socketsByAccount.get(disconnectedUser.accountId);
+      if (socketSet) {
+        socketSet.delete(socket.id);
+        if (!socketSet.size) {
+          socketsByAccount.delete(disconnectedUser.accountId);
+        }
+      }
+    }
+
     broadcastUsers();
   });
 });

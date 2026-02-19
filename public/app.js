@@ -1,4 +1,14 @@
-﻿const socket = io();
+﻿const AUTH_TOKEN_KEY = "chatwave_token";
+
+const authOverlay = document.getElementById("authOverlay");
+const appRoot = document.getElementById("appRoot");
+const authForm = document.getElementById("authForm");
+const usernameInput = document.getElementById("usernameInput");
+const passwordInput = document.getElementById("passwordInput");
+const authError = document.getElementById("authError");
+const loginBtn = document.getElementById("loginBtn");
+const registerBtn = document.getElementById("registerBtn");
+const logoutBtn = document.getElementById("logoutBtn");
 
 const contactsEl = document.getElementById("contacts");
 const messagesEl = document.getElementById("messages");
@@ -15,10 +25,9 @@ const hangupBtn = document.getElementById("hangupBtn");
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
-const name = (prompt("Dein Name:") || "User").trim().slice(0, 30) || "User";
-socket.emit("register", { name });
-
+let socket = null;
 let selfId = null;
+let selfName = null;
 let users = [];
 let messages = [];
 let statuses = [];
@@ -32,6 +41,22 @@ const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
+function setAuthError(message) {
+  authError.textContent = message || "";
+}
+
+function getStoredToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+function setStoredToken(token) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+function clearStoredToken() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -42,6 +67,15 @@ function fmtAge(ts) {
   if (mins < 60) return `vor ${mins} min`;
   const hours = Math.floor(mins / 60);
   return `vor ${hours} h`;
+}
+
+function updateChatHeader() {
+  const target = users.find((u) => u.id === selectedUserId);
+  chatTitle.textContent = target ? `Chat mit ${target.name}` : "Kontakt wählen";
+
+  const enabled = !!target;
+  audioCallBtn.disabled = !enabled;
+  videoCallBtn.disabled = !enabled;
 }
 
 function renderContacts() {
@@ -119,15 +153,6 @@ function renderStatuses() {
   });
 }
 
-function updateChatHeader() {
-  const target = users.find((u) => u.id === selectedUserId);
-  chatTitle.textContent = target ? `Chat mit ${target.name}` : "Kontakt wählen";
-
-  const enabled = !!target;
-  audioCallBtn.disabled = !enabled;
-  videoCallBtn.disabled = !enabled;
-}
-
 function closePeerConnection() {
   if (peerConnection) {
     peerConnection.onicecandidate = null;
@@ -187,7 +212,9 @@ function createPeerConnection(targetId) {
 }
 
 async function startCall(withVideo) {
-  if (!selectedUserId) return;
+  if (!selectedUserId || !socket) {
+    return;
+  }
 
   try {
     const stream = await ensureLocalStream(withVideo);
@@ -206,99 +233,225 @@ async function startCall(withVideo) {
       offer,
       withVideo,
     });
-  } catch (err) {
+  } catch (_err) {
     alert("Kamera/Mikrofon nicht verfügbar.");
     resetCallState();
   }
 }
 
-socket.on("bootstrap", (payload) => {
-  selfId = payload.selfId;
-  users = payload.users;
-  messages = payload.messages;
-  statuses = payload.statuses;
-
-  meLabel.textContent = `Du: ${name}`;
-  renderContacts();
-  renderMessages();
-  renderStatuses();
-});
-
-socket.on("users-updated", (nextUsers) => {
-  users = nextUsers;
-  renderContacts();
-});
-
-socket.on("private-message", (msg) => {
-  messages.push(msg);
-  renderMessages();
-});
-
-socket.on("statuses-updated", (nextStatuses) => {
-  statuses = nextStatuses;
-  renderStatuses();
-});
-
-socket.on("call-offer", async ({ from, fromName, offer, withVideo }) => {
-  const accepted = confirm(`${fromName} ruft an (${withVideo ? "Video" : "Audio"}). Annehmen?`);
-  if (!accepted) {
-    socket.emit("call-reject", { to: from });
+function teardownSocket() {
+  if (!socket) {
     return;
   }
+  socket.removeAllListeners();
+  socket.disconnect();
+  socket = null;
+}
 
-  try {
-    const stream = await ensureLocalStream(withVideo);
-    const pc = createPeerConnection(from);
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+function resetAppState() {
+  teardownSocket();
+  resetCallState();
+  selfId = null;
+  selfName = null;
+  users = [];
+  messages = [];
+  statuses = [];
+  selectedUserId = null;
+  contactsEl.innerHTML = "";
+  messagesEl.innerHTML = "";
+  statusList.innerHTML = "";
+  meLabel.textContent = "Verbinde...";
+  updateChatHeader();
+}
 
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+function bindSocketEvents() {
+  socket.on("bootstrap", (payload) => {
+    selfId = payload.selfId;
+    users = payload.users;
+    messages = payload.messages;
+    statuses = payload.statuses;
 
-    currentPeerId = from;
-    hangupBtn.disabled = false;
+    meLabel.textContent = `Du: ${selfName}`;
+    renderContacts();
+    renderMessages();
+    renderStatuses();
+  });
 
-    socket.emit("call-answer", {
-      to: from,
-      answer,
-    });
-  } catch (err) {
-    socket.emit("call-reject", { to: from });
+  socket.on("users-updated", (nextUsers) => {
+    users = nextUsers;
+    renderContacts();
+  });
+
+  socket.on("private-message", (msg) => {
+    messages.push(msg);
+    renderMessages();
+  });
+
+  socket.on("statuses-updated", (nextStatuses) => {
+    statuses = nextStatuses;
+    renderStatuses();
+  });
+
+  socket.on("call-offer", async ({ from, fromName, offer, withVideo }) => {
+    const accepted = confirm(`${fromName} ruft an (${withVideo ? "Video" : "Audio"}). Annehmen?`);
+    if (!accepted) {
+      socket.emit("call-reject", { to: from });
+      return;
+    }
+
+    try {
+      const stream = await ensureLocalStream(withVideo);
+      const pc = createPeerConnection(from);
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      currentPeerId = from;
+      hangupBtn.disabled = false;
+
+      socket.emit("call-answer", {
+        to: from,
+        answer,
+      });
+    } catch (_err) {
+      socket.emit("call-reject", { to: from });
+      resetCallState();
+    }
+  });
+
+  socket.on("call-answer", async ({ from, answer }) => {
+    if (!peerConnection || currentPeerId !== from) {
+      return;
+    }
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+  });
+
+  socket.on("ice-candidate", async ({ from, candidate }) => {
+    if (!peerConnection || currentPeerId !== from) {
+      return;
+    }
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (_err) {
+    }
+  });
+
+  socket.on("call-reject", ({ fromName }) => {
+    alert(`${fromName} hat den Anruf abgelehnt.`);
     resetCallState();
+  });
+
+  socket.on("call-end", ({ fromName }) => {
+    alert(`Anruf mit ${fromName} beendet.`);
+    resetCallState();
+  });
+
+  socket.on("connect_error", () => {
+    clearStoredToken();
+    resetAppState();
+    authOverlay.classList.remove("is-hidden");
+    appRoot.classList.add("is-hidden");
+    setAuthError("Session abgelaufen. Bitte erneut einloggen.");
+  });
+}
+
+function connectSocket(token, user) {
+  selfName = user.username;
+  socket = io({
+    autoConnect: false,
+    auth: {
+      token,
+    },
+  });
+
+  bindSocketEvents();
+  socket.connect();
+}
+
+async function authRequest(mode, username, password) {
+  const endpoint = mode === "register" ? "/auth/register" : "/auth/login";
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ username, password }),
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Fehler bei der Anmeldung");
   }
+
+  return payload;
+}
+
+async function validateStoredToken(token) {
+  const response = await fetch("/auth/me", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json();
+  return payload.user;
+}
+
+function showApp() {
+  authOverlay.classList.add("is-hidden");
+  appRoot.classList.remove("is-hidden");
+}
+
+function showAuth() {
+  appRoot.classList.add("is-hidden");
+  authOverlay.classList.remove("is-hidden");
+}
+
+loginBtn.addEventListener("click", () => {
+  authForm.dataset.mode = "login";
 });
 
-socket.on("call-answer", async ({ from, answer }) => {
-  if (!peerConnection || currentPeerId !== from) {
-    return;
-  }
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+registerBtn.addEventListener("click", () => {
+  authForm.dataset.mode = "register";
 });
 
-socket.on("ice-candidate", async ({ from, candidate }) => {
-  if (!peerConnection || currentPeerId !== from) {
-    return;
-  }
+authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setAuthError("");
+
+  const mode = authForm.dataset.mode || "login";
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
+
   try {
-    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    const payload = await authRequest(mode, username, password);
+    setStoredToken(payload.token);
+    resetAppState();
+    showApp();
+    connectSocket(payload.token, payload.user);
+    passwordInput.value = "";
   } catch (err) {
+    setAuthError(err.message);
   }
 });
 
-socket.on("call-reject", ({ fromName }) => {
-  alert(`${fromName} hat den Anruf abgelehnt.`);
-  resetCallState();
-});
-
-socket.on("call-end", ({ fromName }) => {
-  alert(`Anruf mit ${fromName} beendet.`);
-  resetCallState();
+logoutBtn.addEventListener("click", () => {
+  clearStoredToken();
+  resetAppState();
+  showAuth();
+  usernameInput.focus();
 });
 
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = chatInput.value.trim();
-  if (!selectedUserId || !text) {
+  if (!selectedUserId || !text || !socket) {
     return;
   }
 
@@ -313,7 +466,7 @@ chatForm.addEventListener("submit", (event) => {
 statusForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = statusInput.value.trim();
-  if (!text) return;
+  if (!text || !socket) return;
 
   socket.emit("status-create", { text });
   statusInput.value = "";
@@ -323,14 +476,34 @@ audioCallBtn.addEventListener("click", () => startCall(false));
 videoCallBtn.addEventListener("click", () => startCall(true));
 
 hangupBtn.addEventListener("click", () => {
-  if (currentPeerId) {
+  if (currentPeerId && socket) {
     socket.emit("call-end", { to: currentPeerId });
   }
   resetCallState();
 });
 
 window.addEventListener("beforeunload", () => {
-  if (currentPeerId) {
+  if (currentPeerId && socket) {
     socket.emit("call-end", { to: currentPeerId });
   }
 });
+
+(async function bootstrapAuth() {
+  authForm.dataset.mode = "login";
+  const token = getStoredToken();
+
+  if (!token) {
+    showAuth();
+    return;
+  }
+
+  const user = await validateStoredToken(token);
+  if (!user) {
+    clearStoredToken();
+    showAuth();
+    return;
+  }
+
+  showApp();
+  connectSocket(token, user);
+})();

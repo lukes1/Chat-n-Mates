@@ -7,10 +7,29 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app">
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <h1>ChatWave Login</h1>
+      <p class="auth-subline">Registrieren oder mit bestehendem Account anmelden</p>
+      <form id="authForm" class="auth-form">
+        <label for="usernameInput">Username</label>
+        <input id="usernameInput" type="text" maxlength="30" placeholder="z. B. lukes1" required />
+        <label for="passwordInput">Passwort</label>
+        <input id="passwordInput" type="password" minlength="6" maxlength="100" placeholder="Mindestens 6 Zeichen" required />
+        <div class="auth-actions">
+          <button id="loginBtn" type="submit" data-mode="login">Login</button>
+          <button id="registerBtn" type="submit" data-mode="register">Registrieren</button>
+        </div>
+      </form>
+      <div id="authError" class="auth-error"></div>
+    </div>
+  </div>
+
+  <div class="app is-hidden" id="appRoot">
     <aside class="sidebar">
       <div class="brand">ChatWave</div>
       <div class="me" id="meLabel">Verbinde...</div>
+      <button id="logoutBtn" class="logout-btn">Logout</button>
       <h3>Kontakte</h3>
       <ul id="contacts" class="contacts"></ul>
     </aside>
