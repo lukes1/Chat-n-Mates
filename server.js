@@ -131,10 +131,15 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS groups (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      image_url TEXT NOT NULL DEFAULT '',
       owner_id TEXT NOT NULL,
       created_at BIGINT NOT NULL
     );
   `);
+
+  await pool.query(`ALTER TABLE groups ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE groups ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT ''`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS group_members (
@@ -487,7 +492,7 @@ async function rejectContactRequest(requestId, accountId) {
 async function getGroupsForAccount(accountId) {
   const result = await pool.query(
     `
-    SELECT g.id, g.name, g.owner_id, g.created_at
+    SELECT g.id, g.name, g.description, g.image_url, g.owner_id, g.created_at
     FROM group_members gm
     JOIN groups g ON g.id = gm.group_id
     WHERE gm.account_id = $1
@@ -499,9 +504,30 @@ async function getGroupsForAccount(accountId) {
   return result.rows.map((row) => ({
     id: row.id,
     name: row.name,
+    description: row.description || "",
+    imageUrl: row.image_url || "",
     ownerId: row.owner_id,
     createdAt: Number(row.created_at),
   }));
+}
+
+async function getGroupById(groupId) {
+  const result = await pool.query(
+    `SELECT id, name, description, image_url, owner_id, created_at FROM groups WHERE id = $1 LIMIT 1`,
+    [groupId]
+  );
+  if (!result.rowCount) {
+    return null;
+  }
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    imageUrl: row.image_url || "",
+    ownerId: row.owner_id,
+    createdAt: Number(row.created_at),
+  };
 }
 
 async function isGroupMember(groupId, accountId) {
@@ -553,12 +579,17 @@ async function createGroup(ownerId, name, memberUsernames) {
 
   const groupId = `grp-${uuidv4()}`;
   const now = Date.now();
-  await pool.query(`INSERT INTO groups (id, name, owner_id, created_at) VALUES ($1, $2, $3, $4)`, [
-    groupId,
-    cleanName,
-    ownerId,
-    now,
-  ]);
+  await pool.query(
+    `INSERT INTO groups (id, name, description, image_url, owner_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      groupId,
+      cleanName,
+      "",
+      "",
+      ownerId,
+      now,
+    ]
+  );
 
   for (const memberId of memberIds) {
     await pool.query(
@@ -568,6 +599,105 @@ async function createGroup(ownerId, name, memberUsernames) {
   }
 
   return { ok: true, groupId, memberIds: Array.from(memberIds) };
+}
+
+async function getGroupDetailsForAccount(accountId, groupId) {
+  const member = await isGroupMember(groupId, accountId);
+  if (!member) {
+    return null;
+  }
+
+  const group = await getGroupById(groupId);
+  if (!group) {
+    return null;
+  }
+
+  const membersResult = await pool.query(
+    `
+    SELECT a.id, a.username
+    FROM group_members gm
+    JOIN accounts a ON a.id = gm.account_id
+    WHERE gm.group_id = $1
+    ORDER BY lower(a.username) ASC
+    `,
+    [groupId]
+  );
+
+  return {
+    ...group,
+    members: membersResult.rows.map((row) => ({
+      id: row.id,
+      name: row.username,
+      online: socketsByAccount.has(row.id),
+    })),
+  };
+}
+
+async function updateGroupMeta(ownerId, groupId, patch) {
+  const group = await getGroupById(groupId);
+  if (!group) {
+    return { ok: false, error: "Gruppe nicht gefunden" };
+  }
+  if (group.ownerId !== ownerId) {
+    return { ok: false, error: "Nur der Owner darf die Gruppe bearbeiten" };
+  }
+
+  const nextName = String(patch.name ?? group.name).trim().slice(0, 40);
+  const nextDescription = String(patch.description ?? group.description).trim().slice(0, 300);
+  const nextImageUrl = String(patch.imageUrl ?? group.imageUrl).trim().slice(0, 500);
+
+  if (nextName.length < 2) {
+    return { ok: false, error: "Gruppenname muss mindestens 2 Zeichen haben" };
+  }
+
+  await pool.query(
+    `UPDATE groups SET name = $2, description = $3, image_url = $4 WHERE id = $1`,
+    [groupId, nextName, nextDescription, nextImageUrl]
+  );
+  return { ok: true };
+}
+
+async function addGroupMemberByUsername(ownerId, groupId, username) {
+  const group = await getGroupById(groupId);
+  if (!group) {
+    return { ok: false, error: "Gruppe nicht gefunden" };
+  }
+  if (group.ownerId !== ownerId) {
+    return { ok: false, error: "Nur der Owner darf Mitglieder hinzufuegen" };
+  }
+
+  const account = await getAccountByUsername(username);
+  if (!account) {
+    return { ok: false, error: "User nicht gefunden" };
+  }
+  if (account.id !== ownerId) {
+    const allowed = await isContact(ownerId, account.id);
+    if (!allowed) {
+      return { ok: false, error: `${account.username} ist nicht in deinen Kontakten` };
+    }
+  }
+
+  await pool.query(
+    `INSERT INTO group_members (group_id, account_id, joined_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [groupId, account.id, Date.now()]
+  );
+  return { ok: true, memberId: account.id };
+}
+
+async function removeGroupMember(ownerId, groupId, memberId) {
+  const group = await getGroupById(groupId);
+  if (!group) {
+    return { ok: false, error: "Gruppe nicht gefunden" };
+  }
+  if (group.ownerId !== ownerId) {
+    return { ok: false, error: "Nur der Owner darf Mitglieder entfernen" };
+  }
+  if (memberId === ownerId) {
+    return { ok: false, error: "Owner kann sich nicht selbst entfernen" };
+  }
+
+  await pool.query(`DELETE FROM group_members WHERE group_id = $1 AND account_id = $2`, [groupId, memberId]);
+  return { ok: true };
 }
 
 async function saveGroupMessage(message) {
@@ -763,6 +893,13 @@ async function emitUsersForAccount(accountId) {
 
 async function emitGroupsForAccount(accountId) {
   emitToAccount(accountId, "groups-updated", await getGroupsForAccount(accountId));
+}
+
+async function emitGroupDetailsForAccount(accountId, groupId) {
+  const details = await getGroupDetailsForAccount(accountId, groupId);
+  if (details) {
+    emitToAccount(accountId, "group-details", details);
+  }
 }
 
 async function emitContactRequestsForAccount(accountId) {
@@ -1162,6 +1299,100 @@ io.on("connection", (socket) => {
         ok: false,
         message: "Gruppe konnte nicht erstellt werden",
       });
+    }
+  });
+
+  socket.on("group-details-get", async ({ groupId }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser || !groupId) {
+        return;
+      }
+      await emitGroupDetailsForAccount(currentUser.accountId, groupId);
+    } catch (_err) {
+    }
+  });
+
+  socket.on("group-meta-update", async ({ groupId, name, description, imageUrl }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser || !groupId) {
+        return;
+      }
+
+      const result = await updateGroupMeta(currentUser.accountId, groupId, { name, description, imageUrl });
+      if (!result.ok) {
+        emitToAccount(currentUser.accountId, "group-create-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      const memberIds = await getGroupMemberIds(groupId);
+      await Promise.all(memberIds.map((accountId) => emitGroupsForAccount(accountId)));
+      await Promise.all(memberIds.map((accountId) => emitGroupDetailsForAccount(accountId, groupId)));
+      emitToAccount(currentUser.accountId, "group-create-result", {
+        ok: true,
+        message: "Gruppendaten aktualisiert",
+      });
+    } catch (_err) {
+    }
+  });
+
+  socket.on("group-member-add", async ({ groupId, username }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser || !groupId || !username) {
+        return;
+      }
+
+      const result = await addGroupMemberByUsername(currentUser.accountId, groupId, username);
+      if (!result.ok) {
+        emitToAccount(currentUser.accountId, "group-create-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      const memberIds = await getGroupMemberIds(groupId);
+      await Promise.all(memberIds.map((accountId) => emitGroupsForAccount(accountId)));
+      await Promise.all(memberIds.map((accountId) => emitGroupDetailsForAccount(accountId, groupId)));
+      emitToAccount(currentUser.accountId, "group-create-result", {
+        ok: true,
+        message: "Mitglied hinzugefuegt",
+      });
+    } catch (_err) {
+    }
+  });
+
+  socket.on("group-member-remove", async ({ groupId, memberId }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser || !groupId || !memberId) {
+        return;
+      }
+
+      const beforeMembers = await getGroupMemberIds(groupId);
+      const result = await removeGroupMember(currentUser.accountId, groupId, memberId);
+      if (!result.ok) {
+        emitToAccount(currentUser.accountId, "group-create-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      const afterMembers = await getGroupMemberIds(groupId);
+      const allAffected = new Set([...beforeMembers, ...afterMembers]);
+      await Promise.all(Array.from(allAffected).map((accountId) => emitGroupsForAccount(accountId)));
+      await Promise.all(afterMembers.map((accountId) => emitGroupDetailsForAccount(accountId, groupId)));
+      emitToAccount(currentUser.accountId, "group-create-result", {
+        ok: true,
+        message: "Mitglied entfernt",
+      });
+    } catch (_err) {
     }
   });
 

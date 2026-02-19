@@ -20,6 +20,16 @@ const groupNameInput = document.getElementById("groupNameInput");
 const groupMembersInput = document.getElementById("groupMembersInput");
 const groupFeedback = document.getElementById("groupFeedback");
 const groupsList = document.getElementById("groupsList");
+const groupDetailsBox = document.getElementById("groupDetailsBox");
+const groupDetailsEmpty = document.getElementById("groupDetailsEmpty");
+const groupDetailsContent = document.getElementById("groupDetailsContent");
+const groupDetailName = document.getElementById("groupDetailName");
+const groupDetailImageUrl = document.getElementById("groupDetailImageUrl");
+const groupDetailDescription = document.getElementById("groupDetailDescription");
+const groupMetaSaveBtn = document.getElementById("groupMetaSaveBtn");
+const groupAddMemberInput = document.getElementById("groupAddMemberInput");
+const groupAddMemberBtn = document.getElementById("groupAddMemberBtn");
+const groupMembersList = document.getElementById("groupMembersList");
 
 const contactsEl = document.getElementById("contacts");
 const messagesEl = document.getElementById("messages");
@@ -44,6 +54,7 @@ let selfId = null;
 let selfName = null;
 let users = [];
 let groups = [];
+let currentGroupDetails = null;
 let messages = [];
 let groupMessages = [];
 let statuses = [];
@@ -162,6 +173,7 @@ function renderContacts() {
       renderGroups();
       renderMessages();
       updateChatHeader();
+      renderGroupDetails();
     };
     li.appendChild(btn);
     contactsEl.appendChild(li);
@@ -199,12 +211,14 @@ function renderGroups() {
       renderGroups();
       renderMessages();
       updateChatHeader();
+      socket?.emit("group-details-get", { groupId: group.id });
     };
     li.appendChild(btn);
     groupsList.appendChild(li);
   });
 
   updateChatHeader();
+  renderGroupDetails();
 }
 
 function renderMessages() {
@@ -289,6 +303,58 @@ function renderRequests() {
     actions.appendChild(rejectBtn);
     li.appendChild(actions);
     requestList.appendChild(li);
+  });
+}
+
+function renderGroupDetails() {
+  const selectedGroup = getSelectedGroup();
+  if (!selectedGroup || !currentGroupDetails || currentGroupDetails.id !== selectedGroup.id) {
+    groupDetailsEmpty.classList.remove("is-hidden");
+    groupDetailsContent.classList.add("is-hidden");
+    groupMembersList.innerHTML = "";
+    return;
+  }
+
+  groupDetailsEmpty.classList.add("is-hidden");
+  groupDetailsContent.classList.remove("is-hidden");
+
+  groupDetailName.value = currentGroupDetails.name || "";
+  groupDetailImageUrl.value = currentGroupDetails.imageUrl || "";
+  groupDetailDescription.value = currentGroupDetails.description || "";
+
+  const isOwner = currentGroupDetails.ownerId === selfId;
+  groupDetailName.disabled = !isOwner;
+  groupDetailImageUrl.disabled = !isOwner;
+  groupDetailDescription.disabled = !isOwner;
+  groupMetaSaveBtn.disabled = !isOwner;
+  groupAddMemberInput.disabled = !isOwner;
+  groupAddMemberBtn.disabled = !isOwner;
+
+  groupMembersList.innerHTML = "";
+  const members = Array.isArray(currentGroupDetails.members) ? currentGroupDetails.members : [];
+  if (!members.length) {
+    groupMembersList.innerHTML = "<li>Keine Mitglieder</li>";
+    return;
+  }
+
+  members.forEach((member) => {
+    const li = document.createElement("li");
+    li.className = "group-member-item";
+
+    const label = document.createElement("span");
+    label.textContent = `${member.name} (${member.online ? "online" : "offline"})`;
+    li.appendChild(label);
+
+    if (isOwner && member.id !== selfId) {
+      const removeBtn = document.createElement("button");
+      removeBtn.textContent = "Entfernen";
+      removeBtn.onclick = () => {
+        socket?.emit("group-member-remove", { groupId: currentGroupDetails.id, memberId: member.id });
+      };
+      li.appendChild(removeBtn);
+    }
+
+    groupMembersList.appendChild(li);
   });
 }
 
@@ -379,6 +445,7 @@ function resetAppState() {
   groups = [];
   messages = [];
   groupMessages = [];
+  currentGroupDetails = null;
   statuses = [];
   incomingRequests = [];
   selectedTarget = null;
@@ -391,6 +458,7 @@ function resetAppState() {
   setContactFeedback("");
   setGroupFeedback("");
   updateChatHeader();
+  renderGroupDetails();
 }
 
 function bindSocketEvents() {
@@ -409,6 +477,11 @@ function bindSocketEvents() {
     renderMessages();
     renderStatuses();
     renderRequests();
+    if (selectedTarget?.type === "group") {
+      socket.emit("group-details-get", { groupId: selectedTarget.id });
+    } else {
+      renderGroupDetails();
+    }
   });
 
   socket.on("users-updated", (nextUsers) => {
@@ -421,6 +494,14 @@ function bindSocketEvents() {
     groups = nextGroups || [];
     renderGroups();
     renderMessages();
+    if (selectedTarget?.type === "group") {
+      socket.emit("group-details-get", { groupId: selectedTarget.id });
+    }
+  });
+
+  socket.on("group-details", (details) => {
+    currentGroupDetails = details || null;
+    renderGroupDetails();
   });
 
   socket.on("private-message", (msg) => {
@@ -623,6 +704,32 @@ groupForm.addEventListener("submit", (event) => {
   socket.emit("group-create", { name, members });
   groupNameInput.value = "";
   groupMembersInput.value = "";
+});
+
+groupMetaSaveBtn.addEventListener("click", () => {
+  const group = getSelectedGroup();
+  if (!group || !socket) {
+    return;
+  }
+  socket.emit("group-meta-update", {
+    groupId: group.id,
+    name: groupDetailName.value.trim(),
+    description: groupDetailDescription.value.trim(),
+    imageUrl: groupDetailImageUrl.value.trim(),
+  });
+});
+
+groupAddMemberBtn.addEventListener("click", () => {
+  const group = getSelectedGroup();
+  const username = groupAddMemberInput.value.trim();
+  if (!group || !username || !socket) {
+    return;
+  }
+  socket.emit("group-member-add", {
+    groupId: group.id,
+    username,
+  });
+  groupAddMemberInput.value = "";
 });
 
 chatForm.addEventListener("submit", (event) => {

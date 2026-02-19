@@ -77,6 +77,22 @@
     </main>
 
     <aside class="status-panel">
+      <h3>Gruppendetails</h3>
+      <div id="groupDetailsBox" class="group-details-box">
+        <div id="groupDetailsEmpty">Keine Gruppe ausgewaehlt</div>
+        <div id="groupDetailsContent" class="is-hidden">
+          <input id="groupDetailName" type="text" maxlength="40" placeholder="Gruppenname" />
+          <input id="groupDetailImageUrl" type="text" maxlength="500" placeholder="Bild-URL" />
+          <textarea id="groupDetailDescription" rows="3" maxlength="300" placeholder="Beschreibung"></textarea>
+          <button id="groupMetaSaveBtn" type="button">Gruppendaten speichern</button>
+          <div class="group-member-add">
+            <input id="groupAddMemberInput" type="text" maxlength="30" placeholder="Mitglied hinzufügen" />
+            <button id="groupAddMemberBtn" type="button">Hinzufuegen</button>
+          </div>
+          <ul id="groupMembersList" class="status-list"></ul>
+        </div>
+      </div>
+
       <h3>Status (24h)</h3>
       <form id="statusForm" class="status-form">
         <input id="statusInput" type="text" placeholder="Neuer Status..." maxlength="300" />

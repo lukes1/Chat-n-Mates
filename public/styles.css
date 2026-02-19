@@ -263,6 +263,44 @@ input {
   padding: 8px 10px;
 }
 
+textarea {
+  width: 100%;
+  background: #0f2b33;
+  border: 1px solid #325760;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.group-details-box {
+  background: var(--soft);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.group-details-box input,
+.group-details-box textarea,
+.group-details-box button {
+  margin-bottom: 8px;
+}
+
+.group-member-add {
+  display: flex;
+  gap: 8px;
+}
+
+.group-member-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 .status-item {
   background: var(--soft);
   border-radius: 10px;
