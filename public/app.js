@@ -80,10 +80,17 @@ function updateChatHeader() {
 
 function renderContacts() {
   contactsEl.innerHTML = "";
-  const peers = users.filter((u) => u.id !== selfId);
+  const peers = users
+    .filter((u) => u.id !== selfId)
+    .sort((a, b) => {
+      if (a.online !== b.online) {
+        return a.online ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name, "de", { sensitivity: "base" });
+    });
 
   if (!peers.length) {
-    contactsEl.innerHTML = "<li>Niemand online</li>";
+    contactsEl.innerHTML = "<li>Keine Kontakte vorhanden</li>";
     selectedUserId = null;
     updateChatHeader();
     return;

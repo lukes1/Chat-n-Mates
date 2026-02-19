@@ -1,4 +1,6 @@
 ﻿const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -8,6 +10,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const ENABLE_BOTS = process.env.ENABLE_BOTS === "true";
+
+const DATA_DIR = path.join(__dirname, "data");
+const DATA_FILE = path.join(DATA_DIR, "store.json");
 
 app.use(express.json());
 app.use(express.static("public"));
@@ -36,6 +41,8 @@ const MAX_MESSAGES = 1000;
 const BOT_ACTIVE_INTERVAL_MS = 25 * 1000;
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+let persistTimer = null;
+
 function normalizeUsername(username) {
   return String(username || "")
     .trim()
@@ -49,6 +56,100 @@ function getUsernameKey(username) {
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString("hex");
+}
+
+function loadDataFromDisk() {
+  try {
+    if (!fs.existsSync(DATA_FILE)) {
+      return;
+    }
+
+    const raw = fs.readFileSync(DATA_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+
+    const persistedAccounts = Array.isArray(parsed.accounts) ? parsed.accounts : [];
+    persistedAccounts.forEach((account) => {
+      if (!account?.id || !account?.username || !account?.salt || !account?.passwordHash) {
+        return;
+      }
+      const normalized = normalizeUsername(account.username);
+      const usernameKey = getUsernameKey(normalized);
+      const hydrated = {
+        id: account.id,
+        username: normalized,
+        salt: account.salt,
+        passwordHash: account.passwordHash,
+        createdAt: account.createdAt || Date.now(),
+      };
+      accountsById.set(hydrated.id, hydrated);
+      accountsByUsername.set(usernameKey, hydrated);
+    });
+
+    const persistedMessages = Array.isArray(parsed.privateMessages) ? parsed.privateMessages : [];
+    persistedMessages.forEach((message) => {
+      if (!message?.id || !message?.from || !message?.to || !message?.text) {
+        return;
+      }
+      privateMessages.push({
+        id: message.id,
+        from: message.from,
+        fromName: String(message.fromName || ""),
+        to: message.to,
+        toName: String(message.toName || ""),
+        text: String(message.text).slice(0, 2000),
+        timestamp: Number(message.timestamp) || Date.now(),
+      });
+    });
+
+    const now = Date.now();
+    const persistedStatuses = Array.isArray(parsed.statuses) ? parsed.statuses : [];
+    persistedStatuses.forEach((status) => {
+      if (!status?.id || !status?.userId || !status?.text || !status?.expiresAt) {
+        return;
+      }
+      if (Number(status.expiresAt) <= now) {
+        return;
+      }
+      statuses.push({
+        id: status.id,
+        userId: status.userId,
+        userName: String(status.userName || ""),
+        text: String(status.text).slice(0, 300),
+        createdAt: Number(status.createdAt) || now,
+        expiresAt: Number(status.expiresAt),
+      });
+    });
+  } catch (err) {
+    console.error("Failed to load persisted data:", err.message);
+  }
+}
+
+function writeDataToDisk() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
+    const payload = {
+      accounts: Array.from(accountsById.values()),
+      privateMessages,
+      statuses,
+    };
+
+    fs.writeFileSync(DATA_FILE, JSON.stringify(payload, null, 2), "utf8");
+  } catch (err) {
+    console.error("Failed to persist data:", err.message);
+  }
+}
+
+function schedulePersist() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+  }
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    writeDataToDisk();
+  }, 150);
 }
 
 function createAccount(username, password) {
@@ -78,6 +179,7 @@ function createAccount(username, password) {
 
   accountsByUsername.set(usernameKey, account);
   accountsById.set(account.id, account);
+  schedulePersist();
   return { ok: true, account };
 }
 
@@ -107,18 +209,21 @@ function getVisibleStatuses() {
   return statuses.filter((status) => status.expiresAt > now);
 }
 
+function getMessagesForAccount(accountId) {
+  return privateMessages.filter((message) => message.from === accountId || message.to === accountId);
+}
+
 function getUsersPayload() {
-  const onlineAccounts = Array.from(socketsByAccount.keys())
-    .map((accountId) => accountsById.get(accountId))
-    .filter(Boolean)
+  const knownAccounts = Array.from(accountsById.values())
+    .sort((a, b) => a.username.localeCompare(b.username, "de", { sensitivity: "base" }))
     .map((account) => ({
       id: account.id,
       name: account.username,
-      online: true,
+      online: socketsByAccount.has(account.id),
     }));
 
   if (!ENABLE_BOTS) {
-    return onlineAccounts;
+    return knownAccounts;
   }
 
   const bots = botUsers.map((bot) => ({
@@ -127,12 +232,13 @@ function getUsersPayload() {
     online: true,
   }));
 
-  return [...onlineAccounts, ...bots];
+  return [...knownAccounts, ...bots];
 }
 
 function trimMessages() {
   if (privateMessages.length > MAX_MESSAGES) {
     privateMessages.splice(0, privateMessages.length - MAX_MESSAGES);
+    schedulePersist();
   }
 }
 
@@ -158,7 +264,7 @@ function buildBotReply(botName, inputText) {
   const text = inputText.toLowerCase();
 
   if (text.includes("hallo") || text.includes("hi")) {
-    return `${botName}: Moin, ich bin online. Test läuft.`;
+    return `${botName}: Moin, ich bin online. Test laeuft.`;
   }
   if (text.includes("?")) {
     return `${botName}: Gute Frage. Der Chat funktioniert auf jeden Fall.`;
@@ -257,6 +363,7 @@ setInterval(() => {
     }
   }
   if (statuses.length !== before) {
+    schedulePersist();
     broadcastStatuses();
   }
 }, 60 * 1000);
@@ -295,6 +402,7 @@ if (ENABLE_BOTS) {
 
     privateMessages.push(proactiveMessage);
     trimMessages();
+    schedulePersist();
     emitToAccount(randomAccount.id, "private-message", proactiveMessage);
   }, BOT_ACTIVE_INTERVAL_MS);
 }
@@ -334,7 +442,7 @@ io.on("connection", (socket) => {
   socket.emit("bootstrap", {
     selfId: account.id,
     users: getUsersPayload(),
-    messages: privateMessages,
+    messages: getMessagesForAccount(account.id),
     statuses: getVisibleStatuses(),
   });
 
@@ -367,6 +475,7 @@ io.on("connection", (socket) => {
 
     privateMessages.push(message);
     trimMessages();
+    schedulePersist();
 
     emitToAccount(fromUser.accountId, "private-message", message);
 
@@ -383,6 +492,7 @@ io.on("connection", (socket) => {
         };
         privateMessages.push(reply);
         trimMessages();
+        schedulePersist();
         emitToAccount(fromUser.accountId, "private-message", reply);
       }, 450 + Math.floor(Math.random() * 700));
       return;
@@ -410,6 +520,7 @@ io.on("connection", (socket) => {
     };
 
     statuses.push(status);
+    schedulePersist();
     broadcastStatuses();
   });
 
@@ -417,7 +528,7 @@ io.on("connection", (socket) => {
     const fromUser = users.get(socket.id);
     const targetAccount = accountsById.get(to);
 
-    if (!fromUser || !targetAccount) {
+    if (!fromUser || !targetAccount || !socketsByAccount.has(targetAccount.id)) {
       return;
     }
 
@@ -503,8 +614,12 @@ io.on("connection", (socket) => {
   });
 });
 
+loadDataFromDisk();
+trimMessages();
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
   console.log(`ENABLE_BOTS=${ENABLE_BOTS}`);
+  console.log(`Persist file: ${DATA_FILE}`);
 });

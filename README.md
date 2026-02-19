@@ -5,6 +5,7 @@ Fullstack Demo mit:
 - Private 1:1 Chats in Echtzeit
 - Status-Updates (laufen nach 24h ab)
 - 1:1 Audio/Video-Anrufe via WebRTC (Signaling über Socket.IO)
+- Persistente Dateidatenbank (`data/store.json`)
 
 ## Lokal starten
 
@@ -44,7 +45,7 @@ Dann im Browser:
 
 ## Hinweise
 
-- Accounts, Sessions, Chats und Status liegen aktuell nur im RAM.
-- Nach Server-Neustart sind Daten weg.
+- Kontakte bleiben sichtbar und wechseln auf `offline`, wenn jemand den Browser schliesst.
+- Daten werden in `data/store.json` gespeichert (Accounts, Chats, Status).
 - Keine Ende-zu-Ende-Verschluesselung.
-- Fuer Produktion fehlen u.a. Datenbank, Password-Reset, TURN-Server, Security-Hardening.
+- Fuer Produktion fehlen u.a. PostgreSQL/Mongo, Password-Reset, TURN-Server, Security-Hardening.
