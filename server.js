@@ -45,6 +45,7 @@ const botUsersById = new Map(botUsers.map((bot) => [bot.id, bot]));
 
 const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MESSAGES = 1000;
+const MAX_GROUP_MESSAGES = 2000;
 const BOT_ACTIVE_INTERVAL_MS = 25 * 1000;
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -124,6 +125,45 @@ async function initDb() {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS contact_requests_from_to_status_idx
     ON contact_requests (from_id, to_id, status);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS group_members (
+      group_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      joined_at BIGINT NOT NULL,
+      PRIMARY KEY (group_id, account_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS group_members_account_idx
+    ON group_members (account_id, joined_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS group_messages (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      from_id TEXT NOT NULL,
+      from_name TEXT NOT NULL,
+      text TEXT NOT NULL,
+      timestamp BIGINT NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS group_messages_group_idx
+    ON group_messages (group_id, timestamp DESC);
   `);
 
   await pool.query(`
@@ -270,6 +310,30 @@ async function createMutualContact(accountA, accountB) {
   } finally {
     client.release();
   }
+}
+
+async function deleteMutualContact(accountA, accountB) {
+  await pool.query(`DELETE FROM contacts WHERE account_id = $1 AND contact_id = $2`, [accountA, accountB]);
+  await pool.query(`DELETE FROM contacts WHERE account_id = $1 AND contact_id = $2`, [accountB, accountA]);
+  await pool.query(
+    `
+    UPDATE contact_requests
+    SET status = 'rejected', updated_at = $3
+    WHERE ((from_id = $1 AND to_id = $2) OR (from_id = $2 AND to_id = $1))
+    AND status = 'pending'
+    `,
+    [accountA, accountB, Date.now()]
+  );
+}
+
+async function clearDirectChat(accountA, accountB) {
+  await pool.query(
+    `
+    DELETE FROM private_messages
+    WHERE (from_id = $1 AND to_id = $2) OR (from_id = $2 AND to_id = $1)
+    `,
+    [accountA, accountB]
+  );
 }
 
 async function getIncomingContactRequests(accountId) {
@@ -420,6 +484,144 @@ async function rejectContactRequest(requestId, accountId) {
   return { ok: true };
 }
 
+async function getGroupsForAccount(accountId) {
+  const result = await pool.query(
+    `
+    SELECT g.id, g.name, g.owner_id, g.created_at
+    FROM group_members gm
+    JOIN groups g ON g.id = gm.group_id
+    WHERE gm.account_id = $1
+    ORDER BY lower(g.name) ASC
+    `,
+    [accountId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    ownerId: row.owner_id,
+    createdAt: Number(row.created_at),
+  }));
+}
+
+async function isGroupMember(groupId, accountId) {
+  const result = await pool.query(
+    `SELECT 1 FROM group_members WHERE group_id = $1 AND account_id = $2 LIMIT 1`,
+    [groupId, accountId]
+  );
+  return result.rowCount > 0;
+}
+
+async function getGroupMemberIds(groupId) {
+  const result = await pool.query(`SELECT account_id FROM group_members WHERE group_id = $1`, [groupId]);
+  return result.rows.map((row) => row.account_id);
+}
+
+async function createGroup(ownerId, name, memberUsernames) {
+  const cleanName = String(name || "").trim().slice(0, 40);
+  if (cleanName.length < 2) {
+    return { ok: false, error: "Gruppenname muss mindestens 2 Zeichen haben" };
+  }
+
+  const uniqueNames = Array.from(
+    new Set(
+      (Array.isArray(memberUsernames) ? memberUsernames : [])
+        .map((entry) => normalizeUsername(entry))
+        .filter(Boolean)
+    )
+  );
+
+  const memberIds = new Set([ownerId]);
+  for (const username of uniqueNames) {
+    const account = await getAccountByUsername(username);
+    if (!account) {
+      return { ok: false, error: `User nicht gefunden: ${username}` };
+    }
+    if (account.id === ownerId) {
+      continue;
+    }
+    const allowed = await isContact(ownerId, account.id);
+    if (!allowed) {
+      return { ok: false, error: `${account.username} ist nicht in deinen Kontakten` };
+    }
+    memberIds.add(account.id);
+  }
+
+  if (memberIds.size < 2) {
+    return { ok: false, error: "Fuege mindestens 1 Kontakt zur Gruppe hinzu" };
+  }
+
+  const groupId = `grp-${uuidv4()}`;
+  const now = Date.now();
+  await pool.query(`INSERT INTO groups (id, name, owner_id, created_at) VALUES ($1, $2, $3, $4)`, [
+    groupId,
+    cleanName,
+    ownerId,
+    now,
+  ]);
+
+  for (const memberId of memberIds) {
+    await pool.query(
+      `INSERT INTO group_members (group_id, account_id, joined_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [groupId, memberId, now]
+    );
+  }
+
+  return { ok: true, groupId, memberIds: Array.from(memberIds) };
+}
+
+async function saveGroupMessage(message) {
+  await pool.query(
+    `
+    INSERT INTO group_messages (id, group_id, from_id, from_name, text, timestamp)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    `,
+    [message.id, message.groupId, message.from, message.fromName, message.text, message.timestamp]
+  );
+
+  await pool.query(
+    `
+    DELETE FROM group_messages
+    WHERE id IN (
+      SELECT id
+      FROM group_messages
+      ORDER BY timestamp DESC
+      OFFSET $1
+    )
+    `,
+    [MAX_GROUP_MESSAGES]
+  );
+}
+
+async function getGroupMessagesForAccount(accountId) {
+  const result = await pool.query(
+    `
+    SELECT gm.id, gm.group_id, gm.from_id, gm.from_name, gm.text, gm.timestamp
+    FROM group_messages gm
+    JOIN group_members m ON m.group_id = gm.group_id
+    WHERE m.account_id = $1
+    ORDER BY gm.timestamp DESC
+    LIMIT $2
+    `,
+    [accountId, MAX_GROUP_MESSAGES]
+  );
+
+  return result.rows
+    .map((row) => ({
+      id: row.id,
+      groupId: row.group_id,
+      from: row.from_id,
+      fromName: row.from_name,
+      text: row.text,
+      timestamp: Number(row.timestamp),
+    }))
+    .reverse();
+}
+
+async function clearGroupChat(groupId) {
+  await pool.query(`DELETE FROM group_messages WHERE group_id = $1`, [groupId]);
+}
+
 async function saveMessage(message) {
   await pool.query(
     `
@@ -557,6 +759,10 @@ function emitToAccount(accountId, eventName, payload) {
 
 async function emitUsersForAccount(accountId) {
   emitToAccount(accountId, "users-updated", await getUsersPayloadForAccount(accountId));
+}
+
+async function emitGroupsForAccount(accountId) {
+  emitToAccount(accountId, "groups-updated", await getGroupsForAccount(accountId));
 }
 
 async function emitContactRequestsForAccount(accountId) {
@@ -768,12 +974,15 @@ io.on("connection", (socket) => {
       socket.emit("bootstrap", {
         selfId: account.id,
         users: await getUsersPayloadForAccount(account.id),
+        groups: await getGroupsForAccount(account.id),
         messages: await getMessagesForAccount(account.id),
+        groupMessages: await getGroupMessagesForAccount(account.id),
         statuses: await getVisibleStatuses(),
         contactRequests: await getIncomingContactRequests(account.id),
       });
 
       await notifyPresenceChange(account.id);
+      await emitGroupsForAccount(account.id);
     } catch (_err) {
     }
   })();
@@ -893,6 +1102,69 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("contact-delete", async ({ contactId }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      const contact = await getAccountById(contactId);
+      if (!currentUser || !contact) {
+        return;
+      }
+
+      const linked = await isContact(currentUser.accountId, contact.id);
+      if (!linked) {
+        emitToAccount(currentUser.accountId, "contact-request-result", {
+          ok: false,
+          message: "Kontakt nicht gefunden",
+        });
+        return;
+      }
+
+      await deleteMutualContact(currentUser.accountId, contact.id);
+      await Promise.all([
+        emitUsersForAccount(currentUser.accountId),
+        emitUsersForAccount(contact.id),
+        emitContactRequestsForAccount(currentUser.accountId),
+        emitContactRequestsForAccount(contact.id),
+      ]);
+
+      emitToAccount(currentUser.accountId, "contact-request-result", {
+        ok: true,
+        message: `${contact.username} wurde entfernt`,
+      });
+    } catch (_err) {
+    }
+  });
+
+  socket.on("group-create", async ({ name, members }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser) {
+        return;
+      }
+
+      const result = await createGroup(currentUser.accountId, name, members);
+      if (!result.ok) {
+        emitToAccount(currentUser.accountId, "group-create-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      emitToAccount(currentUser.accountId, "group-create-result", {
+        ok: true,
+        message: "Gruppe erstellt",
+      });
+
+      await Promise.all(result.memberIds.map((accountId) => emitGroupsForAccount(accountId)));
+    } catch (_err) {
+      emitToAccount(socket.account.id, "group-create-result", {
+        ok: false,
+        message: "Gruppe konnte nicht erstellt werden",
+      });
+    }
+  });
+
   socket.on("private-message", async ({ to, text }) => {
     try {
       const fromUser = users.get(socket.id);
@@ -950,6 +1222,71 @@ io.on("connection", (socket) => {
       }
 
       emitToAccount(targetUser.id, "private-message", message);
+    } catch (_err) {
+    }
+  });
+
+  socket.on("group-message", async ({ groupId, text }) => {
+    try {
+      const fromUser = users.get(socket.id);
+      const safeText = String(text || "").trim().slice(0, 2000);
+      if (!fromUser || !safeText || !groupId) {
+        return;
+      }
+
+      const member = await isGroupMember(groupId, fromUser.accountId);
+      if (!member) {
+        return;
+      }
+
+      const message = {
+        id: uuidv4(),
+        groupId,
+        from: fromUser.accountId,
+        fromName: fromUser.name,
+        text: safeText,
+        timestamp: Date.now(),
+      };
+
+      await saveGroupMessage(message);
+      const memberIds = await getGroupMemberIds(groupId);
+      memberIds.forEach((accountId) => emitToAccount(accountId, "group-message", message));
+    } catch (_err) {
+    }
+  });
+
+  socket.on("chat-clear", async ({ targetType, targetId }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser || !targetId) {
+        return;
+      }
+
+      if (targetType === "user") {
+        const target = await getAccountById(targetId);
+        if (!target) {
+          return;
+        }
+        const linked = await isContact(currentUser.accountId, target.id);
+        if (!linked) {
+          return;
+        }
+
+        await clearDirectChat(currentUser.accountId, target.id);
+        emitToAccount(currentUser.accountId, "direct-chat-cleared", { targetId: target.id });
+        emitToAccount(target.id, "direct-chat-cleared", { targetId: currentUser.accountId });
+        return;
+      }
+
+      if (targetType === "group") {
+        const member = await isGroupMember(targetId, currentUser.accountId);
+        if (!member) {
+          return;
+        }
+        await clearGroupChat(targetId);
+        const memberIds = await getGroupMemberIds(targetId);
+        memberIds.forEach((accountId) => emitToAccount(accountId, "group-chat-cleared", { groupId: targetId }));
+      }
     } catch (_err) {
     }
   });

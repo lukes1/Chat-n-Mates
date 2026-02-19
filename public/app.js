@@ -9,10 +9,17 @@ const authError = document.getElementById("authError");
 const loginBtn = document.getElementById("loginBtn");
 const registerBtn = document.getElementById("registerBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+
 const addContactForm = document.getElementById("addContactForm");
 const addContactInput = document.getElementById("addContactInput");
 const contactFeedback = document.getElementById("contactFeedback");
 const requestList = document.getElementById("requestList");
+
+const groupForm = document.getElementById("groupForm");
+const groupNameInput = document.getElementById("groupNameInput");
+const groupMembersInput = document.getElementById("groupMembersInput");
+const groupFeedback = document.getElementById("groupFeedback");
+const groupsList = document.getElementById("groupsList");
 
 const contactsEl = document.getElementById("contacts");
 const messagesEl = document.getElementById("messages");
@@ -26,17 +33,22 @@ const meLabel = document.getElementById("meLabel");
 const audioCallBtn = document.getElementById("audioCallBtn");
 const videoCallBtn = document.getElementById("videoCallBtn");
 const hangupBtn = document.getElementById("hangupBtn");
+const clearChatBtn = document.getElementById("clearChatBtn");
+const deleteContactBtn = document.getElementById("deleteContactBtn");
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
+const emojiBar = document.getElementById("emojiBar");
 
 let socket = null;
 let selfId = null;
 let selfName = null;
 let users = [];
+let groups = [];
 let messages = [];
+let groupMessages = [];
 let statuses = [];
 let incomingRequests = [];
-let selectedUserId = null;
+let selectedTarget = null;
 
 let peerConnection = null;
 let localStream = null;
@@ -52,6 +64,10 @@ function setAuthError(message) {
 
 function setContactFeedback(message) {
   contactFeedback.textContent = message || "";
+}
+
+function setGroupFeedback(message) {
+  groupFeedback.textContent = message || "";
 }
 
 function getStoredToken() {
@@ -78,45 +94,72 @@ function fmtAge(ts) {
   return `vor ${hours} h`;
 }
 
-function updateChatHeader() {
-  const target = users.find((u) => u.id === selectedUserId);
-  chatTitle.textContent = target ? `Chat mit ${target.name}` : "Kontakt wählen";
+function getSelectedUser() {
+  if (!selectedTarget || selectedTarget.type !== "user") {
+    return null;
+  }
+  return users.find((u) => u.id === selectedTarget.id) || null;
+}
 
-  const enabled = !!target;
-  audioCallBtn.disabled = !enabled;
-  videoCallBtn.disabled = !enabled;
+function getSelectedGroup() {
+  if (!selectedTarget || selectedTarget.type !== "group") {
+    return null;
+  }
+  return groups.find((g) => g.id === selectedTarget.id) || null;
+}
+
+function updateChatHeader() {
+  const user = getSelectedUser();
+  const group = getSelectedGroup();
+
+  if (user) {
+    chatTitle.textContent = `Chat mit ${user.name}`;
+  } else if (group) {
+    chatTitle.textContent = `Gruppe: ${group.name}`;
+  } else {
+    chatTitle.textContent = "Kontakt oder Gruppe wählen";
+  }
+
+  const isUserChat = !!user;
+  const isGroupChat = !!group;
+  audioCallBtn.disabled = !isUserChat;
+  videoCallBtn.disabled = !isUserChat;
+  deleteContactBtn.disabled = !isUserChat;
+  clearChatBtn.disabled = !(isUserChat || isGroupChat);
 }
 
 function renderContacts() {
   contactsEl.innerHTML = "";
-  const peers = users
-    .filter((u) => u.id !== selfId)
-    .sort((a, b) => {
-      if (a.online !== b.online) {
-        return a.online ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name, "de", { sensitivity: "base" });
-    });
+  const peers = [...users].sort((a, b) => {
+    if (a.online !== b.online) {
+      return a.online ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name, "de", { sensitivity: "base" });
+  });
 
   if (!peers.length) {
     contactsEl.innerHTML = "<li>Keine Kontakte vorhanden</li>";
-    selectedUserId = null;
+    if (selectedTarget?.type === "user") {
+      selectedTarget = null;
+    }
     updateChatHeader();
     return;
   }
 
-  if (!selectedUserId || !peers.some((u) => u.id === selectedUserId)) {
-    selectedUserId = peers[0].id;
+  if (selectedTarget?.type === "user" && !peers.some((u) => u.id === selectedTarget.id)) {
+    selectedTarget = null;
   }
 
   peers.forEach((user) => {
     const li = document.createElement("li");
     const btn = document.createElement("button");
-    btn.className = "contact-btn" + (user.id === selectedUserId ? " active" : "");
+    const isActive = selectedTarget?.type === "user" && selectedTarget.id === user.id;
+    btn.className = "contact-btn" + (isActive ? " active" : "");
     btn.textContent = `${user.name} (${user.online ? "online" : "offline"})`;
     btn.onclick = () => {
-      selectedUserId = user.id;
+      selectedTarget = { type: "user", id: user.id };
       renderContacts();
+      renderGroups();
       renderMessages();
       updateChatHeader();
     };
@@ -125,34 +168,84 @@ function renderContacts() {
   });
 
   updateChatHeader();
-  renderMessages();
+}
+
+function renderGroups() {
+  groupsList.innerHTML = "";
+  const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+
+  if (!sorted.length) {
+    groupsList.innerHTML = "<li>Keine Gruppen</li>";
+    if (selectedTarget?.type === "group") {
+      selectedTarget = null;
+    }
+    updateChatHeader();
+    return;
+  }
+
+  if (selectedTarget?.type === "group" && !sorted.some((g) => g.id === selectedTarget.id)) {
+    selectedTarget = null;
+  }
+
+  sorted.forEach((group) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    const isActive = selectedTarget?.type === "group" && selectedTarget.id === group.id;
+    btn.className = "contact-btn" + (isActive ? " active" : "");
+    btn.textContent = group.name;
+    btn.onclick = () => {
+      selectedTarget = { type: "group", id: group.id };
+      renderContacts();
+      renderGroups();
+      renderMessages();
+      updateChatHeader();
+    };
+    li.appendChild(btn);
+    groupsList.appendChild(li);
+  });
+
+  updateChatHeader();
 }
 
 function renderMessages() {
   messagesEl.innerHTML = "";
-  if (!selectedUserId) {
+
+  if (!selectedTarget) {
     return;
   }
 
-  const conv = messages.filter(
-    (m) =>
-      (m.from === selfId && m.to === selectedUserId) ||
-      (m.from === selectedUserId && m.to === selfId)
-  );
+  if (selectedTarget.type === "user") {
+    const targetId = selectedTarget.id;
+    const conv = messages.filter(
+      (m) => (m.from === selfId && m.to === targetId) || (m.from === targetId && m.to === selfId)
+    );
 
-  conv.forEach((msg) => {
-    const div = document.createElement("div");
-    div.className = "bubble " + (msg.from === selfId ? "out" : "in");
-    div.innerHTML = `${msg.text}<small>${fmtTime(msg.timestamp)}</small>`;
-    messagesEl.appendChild(div);
-  });
+    conv.forEach((msg) => {
+      const div = document.createElement("div");
+      div.className = "bubble " + (msg.from === selfId ? "out" : "in");
+      div.innerHTML = `${msg.text}<small>${fmtTime(msg.timestamp)}</small>`;
+      messagesEl.appendChild(div);
+    });
+  }
+
+  if (selectedTarget.type === "group") {
+    const groupId = selectedTarget.id;
+    const conv = groupMessages.filter((m) => m.groupId === groupId);
+
+    conv.forEach((msg) => {
+      const div = document.createElement("div");
+      div.className = "bubble " + (msg.from === selfId ? "out" : "in");
+      const sender = msg.from === selfId ? "Du" : msg.fromName;
+      div.innerHTML = `<strong>${sender}</strong><br>${msg.text}<small>${fmtTime(msg.timestamp)}</small>`;
+      messagesEl.appendChild(div);
+    });
+  }
 
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 function renderStatuses() {
   statusList.innerHTML = "";
-
   const sorted = [...statuses].sort((a, b) => b.createdAt - a.createdAt);
   if (!sorted.length) {
     statusList.innerHTML = "<li>Keine Status-Updates</li>";
@@ -186,19 +279,11 @@ function renderRequests() {
 
     const acceptBtn = document.createElement("button");
     acceptBtn.textContent = "Annehmen";
-    acceptBtn.onclick = () => {
-      if (socket) {
-        socket.emit("contact-request-accept", { requestId: req.id });
-      }
-    };
+    acceptBtn.onclick = () => socket?.emit("contact-request-accept", { requestId: req.id });
 
     const rejectBtn = document.createElement("button");
     rejectBtn.textContent = "Ablehnen";
-    rejectBtn.onclick = () => {
-      if (socket) {
-        socket.emit("contact-request-reject", { requestId: req.id });
-      }
-    };
+    rejectBtn.onclick = () => socket?.emit("contact-request-reject", { requestId: req.id });
 
     actions.appendChild(acceptBtn);
     actions.appendChild(rejectBtn);
@@ -233,14 +318,8 @@ function resetCallState() {
 }
 
 async function ensureLocalStream(withVideo) {
-  if (localStream) {
-    return localStream;
-  }
-
-  localStream = await navigator.mediaDevices.getUserMedia({
-    audio: true,
-    video: !!withVideo,
-  });
+  if (localStream) return localStream;
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: !!withVideo });
   localVideo.srcObject = localStream;
   return localStream;
 }
@@ -251,10 +330,7 @@ function createPeerConnection(targetId) {
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.emit("ice-candidate", {
-        to: targetId,
-        candidate: event.candidate,
-      });
+      socket.emit("ice-candidate", { to: targetId, candidate: event.candidate });
     }
   };
 
@@ -266,27 +342,21 @@ function createPeerConnection(targetId) {
 }
 
 async function startCall(withVideo) {
-  if (!selectedUserId || !socket) {
-    return;
-  }
+  const user = getSelectedUser();
+  if (!user || !socket) return;
 
   try {
     const stream = await ensureLocalStream(withVideo);
-    const pc = createPeerConnection(selectedUserId);
-
+    const pc = createPeerConnection(user.id);
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    currentPeerId = selectedUserId;
+    currentPeerId = user.id;
     hangupBtn.disabled = false;
 
-    socket.emit("call-offer", {
-      to: selectedUserId,
-      offer,
-      withVideo,
-    });
+    socket.emit("call-offer", { to: user.id, offer, withVideo });
   } catch (_err) {
     alert("Kamera/Mikrofon nicht verfügbar.");
     resetCallState();
@@ -294,9 +364,7 @@ async function startCall(withVideo) {
 }
 
 function teardownSocket() {
-  if (!socket) {
-    return;
-  }
+  if (!socket) return;
   socket.removeAllListeners();
   socket.disconnect();
   socket = null;
@@ -308,37 +376,51 @@ function resetAppState() {
   selfId = null;
   selfName = null;
   users = [];
+  groups = [];
   messages = [];
+  groupMessages = [];
   statuses = [];
   incomingRequests = [];
-  selectedUserId = null;
+  selectedTarget = null;
   contactsEl.innerHTML = "";
+  groupsList.innerHTML = "";
+  requestList.innerHTML = "";
   messagesEl.innerHTML = "";
   statusList.innerHTML = "";
-  requestList.innerHTML = "";
   meLabel.textContent = "Verbinde...";
   setContactFeedback("");
+  setGroupFeedback("");
   updateChatHeader();
 }
 
 function bindSocketEvents() {
   socket.on("bootstrap", (payload) => {
     selfId = payload.selfId;
-    users = payload.users;
-    messages = payload.messages;
-    statuses = payload.statuses;
+    users = payload.users || [];
+    groups = payload.groups || [];
+    messages = payload.messages || [];
+    groupMessages = payload.groupMessages || [];
+    statuses = payload.statuses || [];
     incomingRequests = payload.contactRequests || [];
 
     meLabel.textContent = `Du: ${selfName}`;
     renderContacts();
+    renderGroups();
     renderMessages();
     renderStatuses();
     renderRequests();
   });
 
   socket.on("users-updated", (nextUsers) => {
-    users = nextUsers;
+    users = nextUsers || [];
     renderContacts();
+    renderMessages();
+  });
+
+  socket.on("groups-updated", (nextGroups) => {
+    groups = nextGroups || [];
+    renderGroups();
+    renderMessages();
   });
 
   socket.on("private-message", (msg) => {
@@ -346,8 +428,25 @@ function bindSocketEvents() {
     renderMessages();
   });
 
+  socket.on("group-message", (msg) => {
+    groupMessages.push(msg);
+    renderMessages();
+  });
+
+  socket.on("direct-chat-cleared", ({ targetId }) => {
+    messages = messages.filter(
+      (m) => !((m.from === selfId && m.to === targetId) || (m.from === targetId && m.to === selfId))
+    );
+    renderMessages();
+  });
+
+  socket.on("group-chat-cleared", ({ groupId }) => {
+    groupMessages = groupMessages.filter((m) => m.groupId !== groupId);
+    renderMessages();
+  });
+
   socket.on("statuses-updated", (nextStatuses) => {
-    statuses = nextStatuses;
+    statuses = nextStatuses || [];
     renderStatuses();
   });
 
@@ -356,8 +455,12 @@ function bindSocketEvents() {
     renderRequests();
   });
 
-  socket.on("contact-request-result", ({ ok, message }) => {
-    setContactFeedback(message || (ok ? "Anfrage gesendet." : "Anfrage fehlgeschlagen."));
+  socket.on("contact-request-result", ({ message }) => {
+    setContactFeedback(message || "");
+  });
+
+  socket.on("group-create-result", ({ ok, message }) => {
+    setGroupFeedback(message || (ok ? "Gruppe erstellt" : "Gruppenerstellung fehlgeschlagen"));
   });
 
   socket.on("call-offer", async ({ from, fromName, offer, withVideo }) => {
@@ -379,10 +482,7 @@ function bindSocketEvents() {
       currentPeerId = from;
       hangupBtn.disabled = false;
 
-      socket.emit("call-answer", {
-        to: from,
-        answer,
-      });
+      socket.emit("call-answer", { to: from, answer });
     } catch (_err) {
       socket.emit("call-reject", { to: from });
       resetCallState();
@@ -390,16 +490,12 @@ function bindSocketEvents() {
   });
 
   socket.on("call-answer", async ({ from, answer }) => {
-    if (!peerConnection || currentPeerId !== from) {
-      return;
-    }
+    if (!peerConnection || currentPeerId !== from) return;
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
   });
 
   socket.on("ice-candidate", async ({ from, candidate }) => {
-    if (!peerConnection || currentPeerId !== from) {
-      return;
-    }
+    if (!peerConnection || currentPeerId !== from) return;
     try {
       await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (_err) {
@@ -427,13 +523,7 @@ function bindSocketEvents() {
 
 function connectSocket(token, user) {
   selfName = user.username;
-  socket = io({
-    autoConnect: false,
-    auth: {
-      token,
-    },
-  });
-
+  socket = io({ autoConnect: false, auth: { token } });
   bindSocketEvents();
   socket.connect();
 }
@@ -442,31 +532,21 @@ async function authRequest(mode, username, password) {
   const endpoint = mode === "register" ? "/auth/register" : "/auth/login";
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
-
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || "Fehler bei der Anmeldung");
   }
-
   return payload;
 }
 
 async function validateStoredToken(token) {
   const response = await fetch("/auth/me", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: { Authorization: `Bearer ${token}` },
   });
-
-  if (!response.ok) {
-    return null;
-  }
-
+  if (!response.ok) return null;
   const payload = await response.json();
   return payload.user;
 }
@@ -521,25 +601,43 @@ logoutBtn.addEventListener("click", () => {
 addContactForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const username = addContactInput.value.trim();
-  if (!username || !socket) {
-    return;
-  }
+  if (!username || !socket) return;
   setContactFeedback("");
   socket.emit("contact-request-send", { username });
   addContactInput.value = "";
 });
 
-chatForm.addEventListener("submit", (event) => {
+groupForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const text = chatInput.value.trim();
-  if (!selectedUserId || !text || !socket) {
+  const name = groupNameInput.value.trim();
+  const members = groupMembersInput.value
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
+
+  if (!name || !socket) {
     return;
   }
 
-  socket.emit("private-message", {
-    to: selectedUserId,
-    text,
-  });
+  setGroupFeedback("");
+  socket.emit("group-create", { name, members });
+  groupNameInput.value = "";
+  groupMembersInput.value = "";
+});
+
+chatForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = chatInput.value.trim();
+  if (!selectedTarget || !text || !socket) {
+    return;
+  }
+
+  if (selectedTarget.type === "user") {
+    socket.emit("private-message", { to: selectedTarget.id, text });
+  }
+  if (selectedTarget.type === "group") {
+    socket.emit("group-message", { groupId: selectedTarget.id, text });
+  }
 
   chatInput.value = "";
 });
@@ -548,9 +646,38 @@ statusForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = statusInput.value.trim();
   if (!text || !socket) return;
-
   socket.emit("status-create", { text });
   statusInput.value = "";
+});
+
+deleteContactBtn.addEventListener("click", () => {
+  const user = getSelectedUser();
+  if (!user || !socket) {
+    return;
+  }
+  const ok = confirm(`Kontakt ${user.name} wirklich löschen?`);
+  if (!ok) {
+    return;
+  }
+  socket.emit("contact-delete", { contactId: user.id });
+  selectedTarget = null;
+  renderContacts();
+  renderMessages();
+  updateChatHeader();
+});
+
+clearChatBtn.addEventListener("click", () => {
+  if (!selectedTarget || !socket) {
+    return;
+  }
+  const ok = confirm("Chatverlauf wirklich leeren?");
+  if (!ok) {
+    return;
+  }
+  socket.emit("chat-clear", {
+    targetType: selectedTarget.type,
+    targetId: selectedTarget.id,
+  });
 });
 
 audioCallBtn.addEventListener("click", () => startCall(false));
@@ -563,10 +690,21 @@ hangupBtn.addEventListener("click", () => {
   resetCallState();
 });
 
-function disconnectPresence() {
-  if (!socket) {
+emojiBar.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-emoji]");
+  if (!button) {
     return;
   }
+  const emoji = button.getAttribute("data-emoji");
+  if (!emoji) {
+    return;
+  }
+  chatInput.value += emoji;
+  chatInput.focus();
+});
+
+function disconnectPresence() {
+  if (!socket) return;
   if (currentPeerId) {
     socket.emit("call-end", { to: currentPeerId });
   }
