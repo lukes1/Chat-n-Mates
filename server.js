@@ -644,17 +644,48 @@ async function updateGroupMeta(ownerId, groupId, patch) {
 
   const nextName = String(patch.name ?? group.name).trim().slice(0, 40);
   const nextDescription = String(patch.description ?? group.description).trim().slice(0, 300);
-  const nextImageUrl = String(patch.imageUrl ?? group.imageUrl).trim().slice(0, 500);
 
   if (nextName.length < 2) {
     return { ok: false, error: "Gruppenname muss mindestens 2 Zeichen haben" };
   }
 
-  await pool.query(
-    `UPDATE groups SET name = $2, description = $3, image_url = $4 WHERE id = $1`,
-    [groupId, nextName, nextDescription, nextImageUrl]
-  );
+  await pool.query(`UPDATE groups SET name = $2, description = $3 WHERE id = $1`, [
+    groupId,
+    nextName,
+    nextDescription,
+  ]);
   return { ok: true };
+}
+
+async function leaveGroup(accountId, groupId) {
+  const group = await getGroupById(groupId);
+  if (!group) {
+    return { ok: false, error: "Gruppe nicht gefunden" };
+  }
+
+  const member = await isGroupMember(groupId, accountId);
+  if (!member) {
+    return { ok: false, error: "Du bist kein Mitglied" };
+  }
+
+  const members = await getGroupMemberIds(groupId);
+  if (group.ownerId !== accountId) {
+    await pool.query(`DELETE FROM group_members WHERE group_id = $1 AND account_id = $2`, [groupId, accountId]);
+    return { ok: true };
+  }
+
+  const otherMembers = members.filter((id) => id !== accountId);
+  if (!otherMembers.length) {
+    await pool.query(`DELETE FROM group_messages WHERE group_id = $1`, [groupId]);
+    await pool.query(`DELETE FROM group_members WHERE group_id = $1`, [groupId]);
+    await pool.query(`DELETE FROM groups WHERE id = $1`, [groupId]);
+    return { ok: true, deleted: true };
+  }
+
+  const newOwnerId = otherMembers[0];
+  await pool.query(`UPDATE groups SET owner_id = $2 WHERE id = $1`, [groupId, newOwnerId]);
+  await pool.query(`DELETE FROM group_members WHERE group_id = $1 AND account_id = $2`, [groupId, accountId]);
+  return { ok: true, transferredTo: newOwnerId };
 }
 
 async function addGroupMemberByUsername(ownerId, groupId, username) {
@@ -1313,14 +1344,14 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("group-meta-update", async ({ groupId, name, description, imageUrl }) => {
+  socket.on("group-meta-update", async ({ groupId, name, description }) => {
     try {
       const currentUser = users.get(socket.id);
       if (!currentUser || !groupId) {
         return;
       }
 
-      const result = await updateGroupMeta(currentUser.accountId, groupId, { name, description, imageUrl });
+      const result = await updateGroupMeta(currentUser.accountId, groupId, { name, description });
       if (!result.ok) {
         emitToAccount(currentUser.accountId, "group-create-result", {
           ok: false,
@@ -1335,6 +1366,36 @@ io.on("connection", (socket) => {
       emitToAccount(currentUser.accountId, "group-create-result", {
         ok: true,
         message: "Gruppendaten aktualisiert",
+      });
+    } catch (_err) {
+    }
+  });
+
+  socket.on("group-leave", async ({ groupId }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser || !groupId) {
+        return;
+      }
+
+      const beforeMembers = await getGroupMemberIds(groupId);
+      const result = await leaveGroup(currentUser.accountId, groupId);
+      if (!result.ok) {
+        emitToAccount(currentUser.accountId, "group-create-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      const afterMembers = result.deleted ? [] : await getGroupMemberIds(groupId);
+      const affected = new Set([...beforeMembers, ...afterMembers]);
+      await Promise.all(Array.from(affected).map((accountId) => emitGroupsForAccount(accountId)));
+      await Promise.all(afterMembers.map((accountId) => emitGroupDetailsForAccount(accountId, groupId)));
+
+      emitToAccount(currentUser.accountId, "group-create-result", {
+        ok: true,
+        message: "Gruppe verlassen",
       });
     } catch (_err) {
     }

@@ -50,6 +50,10 @@
     </aside>
 
     <main class="main">
+      <div class="main-tabs">
+        <button id="chatTabBtn" class="tab-btn active" type="button">Chats</button>
+        <button id="statusTabBtn" class="tab-btn" type="button">Status</button>
+      </div>
       <header class="chat-header">
         <div id="chatTitle">Kontakt wählen</div>
         <div class="call-actions">
@@ -61,30 +65,41 @@
         </div>
       </header>
 
-      <section id="messages" class="messages"></section>
+      <section id="chatView">
+        <section id="messages" class="messages"></section>
 
-      <form id="chatForm" class="chat-form">
-        <input id="chatInput" type="text" placeholder="Nachricht schreiben..." maxlength="2000" autocomplete="off" />
-        <button type="submit">Senden</button>
-      </form>
-      <div class="emoji-bar" id="emojiBar">
-        <button type="button" data-emoji="😀">😀</button>
-        <button type="button" data-emoji="😂">😂</button>
-        <button type="button" data-emoji="❤️">❤️</button>
-        <button type="button" data-emoji="👍">👍</button>
-        <button type="button" data-emoji="🔥">🔥</button>
-      </div>
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" type="text" placeholder="Nachricht schreiben..." maxlength="2000" autocomplete="off" />
+          <button type="submit">Senden</button>
+        </form>
+        <div class="emoji-bar" id="emojiBar">
+          <button type="button" data-emoji="😀">😀</button>
+          <button type="button" data-emoji="😂">😂</button>
+          <button type="button" data-emoji="❤️">❤️</button>
+          <button type="button" data-emoji="👍">👍</button>
+          <button type="button" data-emoji="🔥">🔥</button>
+        </div>
+      </section>
+
+      <section id="statusView" class="is-hidden">
+        <h3>Status (24h)</h3>
+        <form id="statusForm" class="status-form">
+          <input id="statusInput" type="text" placeholder="Neuer Status..." maxlength="300" />
+          <button type="submit">Posten</button>
+        </form>
+        <ul id="statusList" class="status-list"></ul>
+      </section>
     </main>
 
     <aside class="status-panel">
-      <h3>Gruppendetails</h3>
-      <div id="groupDetailsBox" class="group-details-box">
+      <button id="toggleGroupDetailsBtn" type="button">Gruppendetails</button>
+      <div id="groupDetailsBox" class="group-details-box is-hidden">
         <div id="groupDetailsEmpty">Keine Gruppe ausgewaehlt</div>
         <div id="groupDetailsContent" class="is-hidden">
           <input id="groupDetailName" type="text" maxlength="40" placeholder="Gruppenname" />
-          <input id="groupDetailImageUrl" type="text" maxlength="500" placeholder="Bild-URL" />
           <textarea id="groupDetailDescription" rows="3" maxlength="300" placeholder="Beschreibung"></textarea>
           <button id="groupMetaSaveBtn" type="button">Gruppendaten speichern</button>
+          <button id="groupLeaveBtn" type="button">Gruppe verlassen</button>
           <div class="group-member-add">
             <input id="groupAddMemberInput" type="text" maxlength="30" placeholder="Mitglied hinzufügen" />
             <button id="groupAddMemberBtn" type="button">Hinzufuegen</button>
@@ -93,14 +108,7 @@
         </div>
       </div>
 
-      <h3>Status (24h)</h3>
-      <form id="statusForm" class="status-form">
-        <input id="statusInput" type="text" placeholder="Neuer Status..." maxlength="300" />
-        <button type="submit">Posten</button>
-      </form>
-      <ul id="statusList" class="status-list"></ul>
-
-      <div class="media-box">
+      <div class="media-box is-hidden" id="mediaBox">
         <div class="media-title">Call</div>
         <video id="localVideo" autoplay playsinline muted></video>
         <video id="remoteVideo" autoplay playsinline></video>

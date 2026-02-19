@@ -24,12 +24,13 @@ const groupDetailsBox = document.getElementById("groupDetailsBox");
 const groupDetailsEmpty = document.getElementById("groupDetailsEmpty");
 const groupDetailsContent = document.getElementById("groupDetailsContent");
 const groupDetailName = document.getElementById("groupDetailName");
-const groupDetailImageUrl = document.getElementById("groupDetailImageUrl");
 const groupDetailDescription = document.getElementById("groupDetailDescription");
 const groupMetaSaveBtn = document.getElementById("groupMetaSaveBtn");
 const groupAddMemberInput = document.getElementById("groupAddMemberInput");
 const groupAddMemberBtn = document.getElementById("groupAddMemberBtn");
 const groupMembersList = document.getElementById("groupMembersList");
+const groupLeaveBtn = document.getElementById("groupLeaveBtn");
+const toggleGroupDetailsBtn = document.getElementById("toggleGroupDetailsBtn");
 
 const contactsEl = document.getElementById("contacts");
 const messagesEl = document.getElementById("messages");
@@ -39,6 +40,7 @@ const statusForm = document.getElementById("statusForm");
 const statusInput = document.getElementById("statusInput");
 const statusList = document.getElementById("statusList");
 const chatTitle = document.getElementById("chatTitle");
+const chatHeader = document.querySelector(".chat-header");
 const meLabel = document.getElementById("meLabel");
 const audioCallBtn = document.getElementById("audioCallBtn");
 const videoCallBtn = document.getElementById("videoCallBtn");
@@ -48,6 +50,11 @@ const deleteContactBtn = document.getElementById("deleteContactBtn");
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 const emojiBar = document.getElementById("emojiBar");
+const mediaBox = document.getElementById("mediaBox");
+const chatTabBtn = document.getElementById("chatTabBtn");
+const statusTabBtn = document.getElementById("statusTabBtn");
+const chatView = document.getElementById("chatView");
+const statusView = document.getElementById("statusView");
 
 let socket = null;
 let selfId = null;
@@ -60,10 +67,32 @@ let groupMessages = [];
 let statuses = [];
 let incomingRequests = [];
 let selectedTarget = null;
+let activeMainTab = "chat";
+let isGroupDetailsOpen = false;
 
 let peerConnection = null;
 let localStream = null;
 let currentPeerId = null;
+
+function setMainTab(tab) {
+  activeMainTab = tab === "status" ? "status" : "chat";
+  const showChat = activeMainTab === "chat";
+  chatHeader.classList.toggle("is-hidden", !showChat);
+  chatView.classList.toggle("is-hidden", !showChat);
+  statusView.classList.toggle("is-hidden", showChat);
+  chatTabBtn.classList.toggle("active", showChat);
+  statusTabBtn.classList.toggle("active", !showChat);
+}
+
+function setGroupDetailsOpen(open) {
+  isGroupDetailsOpen = !!open;
+  groupDetailsBox.classList.toggle("is-hidden", !isGroupDetailsOpen);
+  toggleGroupDetailsBtn.textContent = isGroupDetailsOpen ? "Gruppendetails schliessen" : "Gruppendetails";
+}
+
+function setCallUiActive(active) {
+  mediaBox.classList.toggle("is-hidden", !active);
+}
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -207,6 +236,7 @@ function renderGroups() {
     btn.textContent = group.name;
     btn.onclick = () => {
       selectedTarget = { type: "group", id: group.id };
+      setGroupDetailsOpen(true);
       renderContacts();
       renderGroups();
       renderMessages();
@@ -319,16 +349,15 @@ function renderGroupDetails() {
   groupDetailsContent.classList.remove("is-hidden");
 
   groupDetailName.value = currentGroupDetails.name || "";
-  groupDetailImageUrl.value = currentGroupDetails.imageUrl || "";
   groupDetailDescription.value = currentGroupDetails.description || "";
 
   const isOwner = currentGroupDetails.ownerId === selfId;
   groupDetailName.disabled = !isOwner;
-  groupDetailImageUrl.disabled = !isOwner;
   groupDetailDescription.disabled = !isOwner;
   groupMetaSaveBtn.disabled = !isOwner;
   groupAddMemberInput.disabled = !isOwner;
   groupAddMemberBtn.disabled = !isOwner;
+  groupLeaveBtn.disabled = false;
 
   groupMembersList.innerHTML = "";
   const members = Array.isArray(currentGroupDetails.members) ? currentGroupDetails.members : [];
@@ -381,6 +410,7 @@ function resetCallState() {
   remoteVideo.srcObject = null;
   currentPeerId = null;
   hangupBtn.disabled = true;
+  setCallUiActive(false);
 }
 
 async function ensureLocalStream(withVideo) {
@@ -421,6 +451,7 @@ async function startCall(withVideo) {
 
     currentPeerId = user.id;
     hangupBtn.disabled = false;
+    setCallUiActive(true);
 
     socket.emit("call-offer", { to: user.id, offer, withVideo });
   } catch (_err) {
@@ -458,6 +489,9 @@ function resetAppState() {
   setContactFeedback("");
   setGroupFeedback("");
   updateChatHeader();
+  setMainTab("chat");
+  setGroupDetailsOpen(false);
+  setCallUiActive(false);
   renderGroupDetails();
 }
 
@@ -562,6 +596,7 @@ function bindSocketEvents() {
 
       currentPeerId = from;
       hangupBtn.disabled = false;
+      setCallUiActive(true);
 
       socket.emit("call-answer", { to: from, answer });
     } catch (_err) {
@@ -715,8 +750,25 @@ groupMetaSaveBtn.addEventListener("click", () => {
     groupId: group.id,
     name: groupDetailName.value.trim(),
     description: groupDetailDescription.value.trim(),
-    imageUrl: groupDetailImageUrl.value.trim(),
   });
+});
+
+groupLeaveBtn.addEventListener("click", () => {
+  const group = getSelectedGroup();
+  if (!group || !socket) {
+    return;
+  }
+  const ok = confirm(`Gruppe ${group.name} wirklich verlassen?`);
+  if (!ok) {
+    return;
+  }
+  socket.emit("group-leave", { groupId: group.id });
+  selectedTarget = null;
+  currentGroupDetails = null;
+  renderGroups();
+  renderMessages();
+  renderGroupDetails();
+  updateChatHeader();
 });
 
 groupAddMemberBtn.addEventListener("click", () => {
@@ -809,6 +861,10 @@ emojiBar.addEventListener("click", (event) => {
   chatInput.value += emoji;
   chatInput.focus();
 });
+
+chatTabBtn.addEventListener("click", () => setMainTab("chat"));
+statusTabBtn.addEventListener("click", () => setMainTab("status"));
+toggleGroupDetailsBtn.addEventListener("click", () => setGroupDetailsOpen(!isGroupDetailsOpen));
 
 function disconnectPresence() {
   if (!socket) return;

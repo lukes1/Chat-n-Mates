@@ -6,9 +6,10 @@ Fullstack Demo mit:
 - Private 1:1 Chats in Echtzeit
 - Gruppen erstellen und in Gruppen chatten
 - Gruppenmitglieder anzeigen sowie nachtraeglich hinzufuegen/entfernen (Owner)
-- Gruppenbild-URL und Gruppenbeschreibung bearbeiten (Owner)
+- Gruppenbeschreibung bearbeiten (Owner) und Gruppe verlassen
 - Kontakt loeschen und Chatverlauf leeren (Direktchat/Gruppe)
 - Emoji-Quick-Buttons im Chat
+- Chats/Status als getrennte Ansichten (Tab-Wechsel)
 - Status-Updates (laufen nach 24h ab)
 - 1:1 Audio/Video-Anrufe via WebRTC (Signaling über Socket.IO)
 - PostgreSQL Persistenz (Accounts, Chats, Status)
