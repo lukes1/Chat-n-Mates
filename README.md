@@ -1,4 +1,4 @@
-﻿# ChatWave (WhatsApp-like Demo)
+﻿# ChatnMates (WhatsApp-like Demo)
 
 Fullstack Demo mit:
 - Registrierung + Login (Session-Token)

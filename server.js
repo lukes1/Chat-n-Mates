@@ -39,8 +39,12 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 function normalizeUsername(username) {
   return String(username || "")
     .trim()
-    .toLowerCase()
+    .replace(/\s+/g, " ")
     .slice(0, 30);
+}
+
+function getUsernameKey(username) {
+  return normalizeUsername(username).toLowerCase();
 }
 
 function hashPassword(password, salt) {
@@ -49,15 +53,16 @@ function hashPassword(password, salt) {
 
 function createAccount(username, password) {
   const normalizedUsername = normalizeUsername(username);
+  const usernameKey = getUsernameKey(username);
   const safePassword = String(password || "");
 
-  if (!/^[a-z0-9._-]{3,30}$/.test(normalizedUsername)) {
-    return { ok: false, error: "Username: 3-30 Zeichen, nur a-z, 0-9, ., _, -" };
+  if (!/^[a-z0-9._ -]{3,30}$/i.test(normalizedUsername)) {
+    return { ok: false, error: "Username: 3-30 Zeichen, Buchstaben, Zahlen, Leerzeichen, ., _, -" };
   }
   if (safePassword.length < 6 || safePassword.length > 100) {
     return { ok: false, error: "Passwort muss 6-100 Zeichen haben" };
   }
-  if (accountsByUsername.has(normalizedUsername)) {
+  if (accountsByUsername.has(usernameKey)) {
     return { ok: false, error: "Username existiert bereits" };
   }
 
@@ -71,7 +76,7 @@ function createAccount(username, password) {
     createdAt: Date.now(),
   };
 
-  accountsByUsername.set(normalizedUsername, account);
+  accountsByUsername.set(usernameKey, account);
   accountsById.set(account.id, account);
   return { ok: true, account };
 }
@@ -198,8 +203,9 @@ app.post("/auth/register", (req, res) => {
 
 app.post("/auth/login", (req, res) => {
   const username = normalizeUsername(req.body?.username);
+  const usernameKey = getUsernameKey(username);
   const password = String(req.body?.password || "");
-  const account = accountsByUsername.get(username);
+  const account = accountsByUsername.get(usernameKey);
 
   if (!account) {
     return res.status(401).json({ error: "Login fehlgeschlagen" });
