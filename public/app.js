@@ -406,11 +406,13 @@ async function validateStoredToken(token) {
 function showApp() {
   authOverlay.classList.add("is-hidden");
   appRoot.classList.remove("is-hidden");
+  window.scrollTo(0, 0);
 }
 
 function showAuth() {
   appRoot.classList.add("is-hidden");
   authOverlay.classList.remove("is-hidden");
+  window.scrollTo(0, 0);
 }
 
 loginBtn.addEventListener("click", () => {

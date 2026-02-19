@@ -25,10 +25,14 @@ body {
 }
 
 .auth-overlay {
+  position: fixed;
+  inset: 0;
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 16px;
+  z-index: 1000;
+  background: rgba(11, 31, 33, 0.75);
 }
 
 .auth-card {
