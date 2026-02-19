@@ -97,6 +97,36 @@ async function initDb() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS contacts (
+      account_id TEXT NOT NULL,
+      contact_id TEXT NOT NULL,
+      created_at BIGINT NOT NULL,
+      PRIMARY KEY (account_id, contact_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contact_requests (
+      id TEXT PRIMARY KEY,
+      from_id TEXT NOT NULL,
+      to_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS contact_requests_to_status_idx
+    ON contact_requests (to_id, status, created_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS contact_requests_from_to_status_idx
+    ON contact_requests (from_id, to_id, status);
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS private_messages (
       id TEXT PRIMARY KEY,
       from_id TEXT NOT NULL,
@@ -207,9 +237,187 @@ async function getAccountById(accountId) {
   };
 }
 
-async function listAccounts() {
-  const result = await pool.query(`SELECT id, username FROM accounts ORDER BY lower(username) ASC`);
-  return result.rows.map((row) => ({ id: row.id, username: row.username }));
+async function isContact(accountId, targetAccountId) {
+  const result = await pool.query(
+    `SELECT 1 FROM contacts WHERE account_id = $1 AND contact_id = $2 LIMIT 1`,
+    [accountId, targetAccountId]
+  );
+  return result.rowCount > 0;
+}
+
+async function getContactIds(accountId) {
+  const result = await pool.query(`SELECT contact_id FROM contacts WHERE account_id = $1`, [accountId]);
+  return result.rows.map((row) => row.contact_id);
+}
+
+async function createMutualContact(accountA, accountB) {
+  const now = Date.now();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO contacts (account_id, contact_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [accountA, accountB, now]
+    );
+    await client.query(
+      `INSERT INTO contacts (account_id, contact_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [accountB, accountA, now]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function getIncomingContactRequests(accountId) {
+  const result = await pool.query(
+    `
+    SELECT cr.id, cr.from_id, a.username AS from_name, cr.created_at
+    FROM contact_requests cr
+    JOIN accounts a ON a.id = cr.from_id
+    WHERE cr.to_id = $1 AND cr.status = 'pending'
+    ORDER BY cr.created_at DESC
+    `,
+    [accountId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    fromId: row.from_id,
+    fromName: row.from_name,
+    createdAt: Number(row.created_at),
+  }));
+}
+
+async function createContactRequest(fromId, toId) {
+  const now = Date.now();
+
+  const reversePending = await pool.query(
+    `
+    SELECT id
+    FROM contact_requests
+    WHERE from_id = $1 AND to_id = $2 AND status = 'pending'
+    LIMIT 1
+    `,
+    [toId, fromId]
+  );
+
+  if (reversePending.rowCount) {
+    const requestId = reversePending.rows[0].id;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE contact_requests SET status = 'accepted', updated_at = $2 WHERE id = $1`,
+        [requestId, now]
+      );
+      await client.query(
+        `INSERT INTO contacts (account_id, contact_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [fromId, toId, now]
+      );
+      await client.query(
+        `INSERT INTO contacts (account_id, contact_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [toId, fromId, now]
+      );
+      await client.query("COMMIT");
+      return { ok: true, autoAccepted: true };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  const existing = await pool.query(
+    `
+    SELECT 1
+    FROM contact_requests
+    WHERE from_id = $1 AND to_id = $2 AND status = 'pending'
+    LIMIT 1
+    `,
+    [fromId, toId]
+  );
+  if (existing.rowCount) {
+    return { ok: false, error: "Anfrage wurde bereits gesendet" };
+  }
+
+  await pool.query(
+    `
+    INSERT INTO contact_requests (id, from_id, to_id, status, created_at, updated_at)
+    VALUES ($1, $2, $3, 'pending', $4, $4)
+    `,
+    [uuidv4(), fromId, toId, now]
+  );
+
+  return { ok: true, autoAccepted: false };
+}
+
+async function acceptContactRequest(requestId, accountId) {
+  const now = Date.now();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const reqResult = await client.query(
+      `
+      SELECT id, from_id, to_id
+      FROM contact_requests
+      WHERE id = $1 AND to_id = $2 AND status = 'pending'
+      LIMIT 1
+      `,
+      [requestId, accountId]
+    );
+
+    if (!reqResult.rowCount) {
+      await client.query("ROLLBACK");
+      return { ok: false, error: "Anfrage nicht gefunden" };
+    }
+
+    const request = reqResult.rows[0];
+
+    await client.query(
+      `UPDATE contact_requests SET status = 'accepted', updated_at = $2 WHERE id = $1`,
+      [request.id, now]
+    );
+
+    await client.query(
+      `INSERT INTO contacts (account_id, contact_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [request.from_id, request.to_id, now]
+    );
+    await client.query(
+      `INSERT INTO contacts (account_id, contact_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [request.to_id, request.from_id, now]
+    );
+
+    await client.query("COMMIT");
+    return { ok: true, fromId: request.from_id, toId: request.to_id };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function rejectContactRequest(requestId, accountId) {
+  const now = Date.now();
+  const result = await pool.query(
+    `
+    UPDATE contact_requests
+    SET status = 'rejected', updated_at = $3
+    WHERE id = $1 AND to_id = $2 AND status = 'pending'
+    `,
+    [requestId, accountId, now]
+  );
+
+  if (!result.rowCount) {
+    return { ok: false, error: "Anfrage nicht gefunden" };
+  }
+  return { ok: true };
 }
 
 async function saveMessage(message) {
@@ -306,16 +514,26 @@ async function deleteExpiredStatuses() {
   return result.rowCount;
 }
 
-async function getUsersPayload() {
-  const accounts = await listAccounts();
-  const knownAccounts = accounts.map((account) => ({
-    id: account.id,
-    name: account.username,
-    online: socketsByAccount.has(account.id),
+async function getUsersPayloadForAccount(accountId) {
+  const result = await pool.query(
+    `
+    SELECT a.id, a.username
+    FROM contacts c
+    JOIN accounts a ON a.id = c.contact_id
+    WHERE c.account_id = $1
+    ORDER BY lower(a.username) ASC
+    `,
+    [accountId]
+  );
+
+  const contacts = result.rows.map((row) => ({
+    id: row.id,
+    name: row.username,
+    online: socketsByAccount.has(row.id),
   }));
 
   if (!ENABLE_BOTS) {
-    return knownAccounts;
+    return contacts;
   }
 
   const bots = botUsers.map((bot) => ({
@@ -324,17 +542,7 @@ async function getUsersPayload() {
     online: true,
   }));
 
-  return [...knownAccounts, ...bots];
-}
-
-async function broadcastUsers() {
-  const payload = await getUsersPayload();
-  io.emit("users-updated", payload);
-}
-
-async function broadcastStatuses() {
-  const payload = await getVisibleStatuses();
-  io.emit("statuses-updated", payload);
+  return [...contacts, ...bots];
 }
 
 function emitToAccount(accountId, eventName, payload) {
@@ -345,6 +553,22 @@ function emitToAccount(accountId, eventName, payload) {
   socketIds.forEach((socketId) => {
     io.to(socketId).emit(eventName, payload);
   });
+}
+
+async function emitUsersForAccount(accountId) {
+  emitToAccount(accountId, "users-updated", await getUsersPayloadForAccount(accountId));
+}
+
+async function emitContactRequestsForAccount(accountId) {
+  emitToAccount(accountId, "contact-requests-updated", await getIncomingContactRequests(accountId));
+}
+
+async function notifyPresenceChange(accountId) {
+  const related = new Set([accountId]);
+  const contacts = await getContactIds(accountId);
+  contacts.forEach((id) => related.add(id));
+
+  await Promise.all(Array.from(related).map((id) => emitUsersForAccount(id)));
 }
 
 function buildBotReply(botName, inputText) {
@@ -456,7 +680,7 @@ setInterval(async () => {
   try {
     const removedCount = await deleteExpiredStatuses();
     if (removedCount > 0) {
-      await broadcastStatuses();
+      io.emit("statuses-updated", await getVisibleStatuses());
     }
   } catch (_err) {
   }
@@ -543,30 +767,156 @@ io.on("connection", (socket) => {
     try {
       socket.emit("bootstrap", {
         selfId: account.id,
-        users: await getUsersPayload(),
+        users: await getUsersPayloadForAccount(account.id),
         messages: await getMessagesForAccount(account.id),
         statuses: await getVisibleStatuses(),
+        contactRequests: await getIncomingContactRequests(account.id),
       });
 
-      await broadcastUsers();
-      await broadcastStatuses();
+      await notifyPresenceChange(account.id);
     } catch (_err) {
     }
   })();
 
+  socket.on("contact-request-send", async ({ username }) => {
+    try {
+      const fromUser = users.get(socket.id);
+      if (!fromUser) {
+        return;
+      }
+
+      const target = await getAccountByUsername(username);
+      if (!target) {
+        emitToAccount(fromUser.accountId, "contact-request-result", {
+          ok: false,
+          message: "User nicht gefunden",
+        });
+        return;
+      }
+
+      if (target.id === fromUser.accountId) {
+        emitToAccount(fromUser.accountId, "contact-request-result", {
+          ok: false,
+          message: "Du kannst dich nicht selbst hinzufügen",
+        });
+        return;
+      }
+
+      if (await isContact(fromUser.accountId, target.id)) {
+        emitToAccount(fromUser.accountId, "contact-request-result", {
+          ok: false,
+          message: "Kontakt existiert bereits",
+        });
+        return;
+      }
+
+      const result = await createContactRequest(fromUser.accountId, target.id);
+      if (!result.ok) {
+        emitToAccount(fromUser.accountId, "contact-request-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      if (result.autoAccepted) {
+        emitToAccount(fromUser.accountId, "contact-request-result", {
+          ok: true,
+          message: `Kontakt mit ${target.username} wurde bestaetigt`,
+        });
+        await Promise.all([
+          emitUsersForAccount(fromUser.accountId),
+          emitUsersForAccount(target.id),
+          emitContactRequestsForAccount(fromUser.accountId),
+          emitContactRequestsForAccount(target.id),
+        ]);
+        return;
+      }
+
+      emitToAccount(fromUser.accountId, "contact-request-result", {
+        ok: true,
+        message: `Anfrage an ${target.username} gesendet`,
+      });
+      await emitContactRequestsForAccount(target.id);
+    } catch (_err) {
+      emitToAccount(socket.account.id, "contact-request-result", {
+        ok: false,
+        message: "Anfrage fehlgeschlagen",
+      });
+    }
+  });
+
+  socket.on("contact-request-accept", async ({ requestId }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser) {
+        return;
+      }
+
+      const result = await acceptContactRequest(String(requestId || ""), currentUser.accountId);
+      if (!result.ok) {
+        emitToAccount(currentUser.accountId, "contact-request-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      await Promise.all([
+        emitUsersForAccount(result.fromId),
+        emitUsersForAccount(result.toId),
+        emitContactRequestsForAccount(result.fromId),
+        emitContactRequestsForAccount(result.toId),
+      ]);
+    } catch (_err) {
+    }
+  });
+
+  socket.on("contact-request-reject", async ({ requestId }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser) {
+        return;
+      }
+
+      const result = await rejectContactRequest(String(requestId || ""), currentUser.accountId);
+      if (!result.ok) {
+        emitToAccount(currentUser.accountId, "contact-request-result", {
+          ok: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      await emitContactRequestsForAccount(currentUser.accountId);
+    } catch (_err) {
+    }
+  });
+
   socket.on("private-message", async ({ to, text }) => {
     try {
       const fromUser = users.get(socket.id);
+      const safeText = String(text || "").trim().slice(0, 2000);
+      if (!fromUser || !safeText) {
+        return;
+      }
+
       const targetAccount = await getAccountById(to);
       const targetUser = targetAccount
         ? { id: targetAccount.id, name: targetAccount.username }
         : ENABLE_BOTS
           ? botUsersById.get(to)
           : null;
-      const safeText = String(text || "").trim().slice(0, 2000);
 
-      if (!fromUser || !targetUser || !safeText) {
+      if (!targetUser) {
         return;
+      }
+
+      if (!botUsersById.has(targetUser.id)) {
+        const contactAllowed = await isContact(fromUser.accountId, targetUser.id);
+        if (!contactAllowed) {
+          return;
+        }
       }
 
       const message = {
@@ -624,14 +974,19 @@ io.on("connection", (socket) => {
       };
 
       await insertStatus(status);
-      await broadcastStatuses();
+      io.emit("statuses-updated", await getVisibleStatuses());
     } catch (_err) {
     }
   });
 
-  socket.on("call-offer", ({ to, offer, withVideo }) => {
+  socket.on("call-offer", async ({ to, offer, withVideo }) => {
     const fromUser = users.get(socket.id);
     if (!fromUser || !socketsByAccount.has(to)) {
+      return;
+    }
+
+    const contactAllowed = await isContact(fromUser.accountId, to);
+    if (!contactAllowed) {
       return;
     }
 
@@ -703,11 +1058,11 @@ io.on("connection", (socket) => {
           socketsByAccount.delete(disconnectedUser.accountId);
         }
       }
-    }
 
-    try {
-      await broadcastUsers();
-    } catch (_err) {
+      try {
+        await notifyPresenceChange(disconnectedUser.accountId);
+      } catch (_err) {
+      }
     }
   });
 });

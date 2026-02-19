@@ -2,6 +2,7 @@
 
 Fullstack Demo mit:
 - Registrierung + Login (Session-Token)
+- Kontaktanfragen + Freundesliste (nur bestaetigte Kontakte sichtbar)
 - Private 1:1 Chats in Echtzeit
 - Status-Updates (laufen nach 24h ab)
 - 1:1 Audio/Video-Anrufe via WebRTC (Signaling über Socket.IO)

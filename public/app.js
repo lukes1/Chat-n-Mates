@@ -9,6 +9,10 @@ const authError = document.getElementById("authError");
 const loginBtn = document.getElementById("loginBtn");
 const registerBtn = document.getElementById("registerBtn");
 const logoutBtn = document.getElementById("logoutBtn");
+const addContactForm = document.getElementById("addContactForm");
+const addContactInput = document.getElementById("addContactInput");
+const contactFeedback = document.getElementById("contactFeedback");
+const requestList = document.getElementById("requestList");
 
 const contactsEl = document.getElementById("contacts");
 const messagesEl = document.getElementById("messages");
@@ -31,6 +35,7 @@ let selfName = null;
 let users = [];
 let messages = [];
 let statuses = [];
+let incomingRequests = [];
 let selectedUserId = null;
 
 let peerConnection = null;
@@ -43,6 +48,10 @@ const rtcConfig = {
 
 function setAuthError(message) {
   authError.textContent = message || "";
+}
+
+function setContactFeedback(message) {
+  contactFeedback.textContent = message || "";
 }
 
 function getStoredToken() {
@@ -160,6 +169,44 @@ function renderStatuses() {
   });
 }
 
+function renderRequests() {
+  requestList.innerHTML = "";
+  if (!incomingRequests.length) {
+    requestList.innerHTML = "<li>Keine offenen Anfragen</li>";
+    return;
+  }
+
+  incomingRequests.forEach((req) => {
+    const li = document.createElement("li");
+    li.className = "request-item";
+    li.innerHTML = `<strong>${req.fromName}</strong>`;
+
+    const actions = document.createElement("div");
+    actions.className = "request-actions";
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.textContent = "Annehmen";
+    acceptBtn.onclick = () => {
+      if (socket) {
+        socket.emit("contact-request-accept", { requestId: req.id });
+      }
+    };
+
+    const rejectBtn = document.createElement("button");
+    rejectBtn.textContent = "Ablehnen";
+    rejectBtn.onclick = () => {
+      if (socket) {
+        socket.emit("contact-request-reject", { requestId: req.id });
+      }
+    };
+
+    actions.appendChild(acceptBtn);
+    actions.appendChild(rejectBtn);
+    li.appendChild(actions);
+    requestList.appendChild(li);
+  });
+}
+
 function closePeerConnection() {
   if (peerConnection) {
     peerConnection.onicecandidate = null;
@@ -263,11 +310,14 @@ function resetAppState() {
   users = [];
   messages = [];
   statuses = [];
+  incomingRequests = [];
   selectedUserId = null;
   contactsEl.innerHTML = "";
   messagesEl.innerHTML = "";
   statusList.innerHTML = "";
+  requestList.innerHTML = "";
   meLabel.textContent = "Verbinde...";
+  setContactFeedback("");
   updateChatHeader();
 }
 
@@ -277,11 +327,13 @@ function bindSocketEvents() {
     users = payload.users;
     messages = payload.messages;
     statuses = payload.statuses;
+    incomingRequests = payload.contactRequests || [];
 
     meLabel.textContent = `Du: ${selfName}`;
     renderContacts();
     renderMessages();
     renderStatuses();
+    renderRequests();
   });
 
   socket.on("users-updated", (nextUsers) => {
@@ -297,6 +349,15 @@ function bindSocketEvents() {
   socket.on("statuses-updated", (nextStatuses) => {
     statuses = nextStatuses;
     renderStatuses();
+  });
+
+  socket.on("contact-requests-updated", (nextRequests) => {
+    incomingRequests = nextRequests || [];
+    renderRequests();
+  });
+
+  socket.on("contact-request-result", ({ ok, message }) => {
+    setContactFeedback(message || (ok ? "Anfrage gesendet." : "Anfrage fehlgeschlagen."));
   });
 
   socket.on("call-offer", async ({ from, fromName, offer, withVideo }) => {
@@ -455,6 +516,17 @@ logoutBtn.addEventListener("click", () => {
   resetAppState();
   showAuth();
   usernameInput.focus();
+});
+
+addContactForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const username = addContactInput.value.trim();
+  if (!username || !socket) {
+    return;
+  }
+  setContactFeedback("");
+  socket.emit("contact-request-send", { username });
+  addContactInput.value = "";
 });
 
 chatForm.addEventListener("submit", (event) => {
