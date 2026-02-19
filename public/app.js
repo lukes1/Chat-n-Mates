@@ -491,11 +491,18 @@ hangupBtn.addEventListener("click", () => {
   resetCallState();
 });
 
-window.addEventListener("beforeunload", () => {
-  if (currentPeerId && socket) {
+function disconnectPresence() {
+  if (!socket) {
+    return;
+  }
+  if (currentPeerId) {
     socket.emit("call-end", { to: currentPeerId });
   }
-});
+  socket.disconnect();
+}
+
+window.addEventListener("beforeunload", disconnectPresence);
+window.addEventListener("pagehide", disconnectPresence);
 
 (async function bootstrapAuth() {
   authForm.dataset.mode = "login";

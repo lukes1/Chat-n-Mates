@@ -8,7 +8,10 @@ const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  pingInterval: 5000,
+  pingTimeout: 5000,
+});
 const ENABLE_BOTS = process.env.ENABLE_BOTS === "true";
 
 const DATA_DIR = path.join(__dirname, "data");
