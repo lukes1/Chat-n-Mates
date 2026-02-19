@@ -1,6 +1,12 @@
-﻿services:
+﻿databases:
+  - name: chatnmates-db
+    databaseName: chatnmates
+    user: chatnmates
+    plan: free
+
+services:
   - type: web
-    name: chatwave
+    name: chatnmates
     env: node
     plan: free
     buildCommand: npm install
@@ -11,3 +17,7 @@
         value: 18
       - key: ENABLE_BOTS
         value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chatnmates-db
+          property: connectionString

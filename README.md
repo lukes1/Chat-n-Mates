@@ -5,11 +5,16 @@ Fullstack Demo mit:
 - Private 1:1 Chats in Echtzeit
 - Status-Updates (laufen nach 24h ab)
 - 1:1 Audio/Video-Anrufe via WebRTC (Signaling über Socket.IO)
-- Persistente Dateidatenbank (`data/store.json`)
+- PostgreSQL Persistenz (Accounts, Chats, Status)
 
-## Lokal starten
+## Lokal starten (mit PostgreSQL)
 
-```bash
+Voraussetzung: PostgreSQL läuft lokal und `DATABASE_URL` ist gesetzt.
+
+PowerShell Beispiel:
+
+```powershell
+$env:DATABASE_URL="postgres://postgres:postgres@localhost:5432/chatnmates"
 npm install
 npm start
 ```
@@ -18,27 +23,19 @@ Dann im Browser:
 
 `http://localhost:3000`
 
-## Nutzung
-
-1. In der Login-Maske registrieren (`Username`, `Passwort`).
-2. Mit dem Account einloggen.
-3. In einem zweiten Browser/Inkognito mit einem zweiten Account einloggen.
-4. Chat, Status und Call testen.
-
-## Online deployen (Render)
+## Online deployen (Render Free)
 
 1. Code in dein GitHub-Repo pushen.
 2. Auf https://render.com einloggen.
 3. `New +` -> `Blueprint` waehlen.
 4. Repository verbinden.
-5. Render liest automatisch `render.yaml`.
+5. Render liest `render.yaml` und erstellt Web-Service + PostgreSQL.
 6. Deploy starten.
-7. Nach dem Deploy bekommst du eine URL wie:
-   `https://chatwave-xxxx.onrender.com`
 
 ## Wichtige Env-Variablen
 
 - `PORT` wird vom Hoster gesetzt.
+- `DATABASE_URL` ist Pflicht (wird in `render.yaml` aus der DB gesetzt).
 - `ENABLE_BOTS`:
   - `false` (empfohlen fuer echte Nutzung mit Freunden)
   - `true` (wenn du Test-Bots willst)
@@ -46,6 +43,6 @@ Dann im Browser:
 ## Hinweise
 
 - Kontakte bleiben sichtbar und wechseln auf `offline`, wenn jemand den Browser schliesst.
-- Daten werden in `data/store.json` gespeichert (Accounts, Chats, Status).
+- Sessions liegen derzeit in-memory (bei Neustart erneuter Login noetig).
 - Keine Ende-zu-Ende-Verschluesselung.
-- Fuer Produktion fehlen u.a. PostgreSQL/Mongo, Password-Reset, TURN-Server, Security-Hardening.
+- Render Free PostgreSQL hat Limits und kann ablaufen.
