@@ -171,9 +171,15 @@ h3 {
 }
 
 .add-contact-form {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.add-contact-form button,
+.group-member-add button {
+  white-space: nowrap;
 }
 
 .group-form {
@@ -320,6 +326,7 @@ button:disabled {
 
 input {
   flex: 1;
+  min-width: 0;
   background: #0f2b33;
   border: 1px solid #325760;
   color: var(--text);
@@ -370,7 +377,8 @@ textarea {
 }
 
 .group-member-add {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
 
@@ -421,8 +429,10 @@ video {
 }
 
 @media (max-width: 1100px) {
-  .app {
-    grid-template-columns: 220px 1fr;
+  .app,
+  .app.sidepanel-hidden,
+  .app.sidepanel-compact {
+    grid-template-columns: minmax(240px, 280px) 1fr;
   }
 
   .status-panel {
@@ -430,8 +440,24 @@ video {
   }
 }
 
-@media (max-width: 720px) {
-  .app {
+@media (max-width: 900px) {
+  .app,
+  .app.sidepanel-hidden,
+  .app.sidepanel-compact {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar,
+  .main,
+  .status-panel {
+    width: 100%;
+  }
+
+  .add-contact-form {
+    grid-template-columns: 1fr;
+  }
+
+  .add-contact-form button {
+    width: 100%;
   }
 }
