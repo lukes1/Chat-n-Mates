@@ -30,6 +30,28 @@ Dann im Browser:
 
 `http://localhost:3000`
 
+## Docker (App + DB mit einem Befehl)
+
+Voraussetzung: Docker Desktop installiert und gestartet.
+
+Starten:
+
+```powershell
+docker compose up --build
+```
+
+Stoppen:
+
+```powershell
+docker compose down
+```
+
+Komplett inkl. Datenbank-Volume entfernen:
+
+```powershell
+docker compose down -v
+```
+
 ## Online deployen (Render Free)
 
 1. Code in dein GitHub-Repo pushen.
