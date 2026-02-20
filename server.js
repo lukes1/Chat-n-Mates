@@ -242,8 +242,8 @@ async function createAccount(username, password) {
   const normalizedUsername = normalizeUsername(username);
   const safePassword = String(password || "");
 
-  if (!/^[a-z0-9._ -]{3,30}$/i.test(normalizedUsername)) {
-    return { ok: false, error: "Username: 3-30 Zeichen, Buchstaben, Zahlen, Leerzeichen, ., _, -" };
+  if (!/^[\p{L}\p{N}._ -]{3,30}$/u.test(normalizedUsername)) {
+    return { ok: false, error: "Username: 3-30 Zeichen, Buchstaben (inkl. Umlaute), Zahlen, Leerzeichen, ., _, -" };
   }
   if (safePassword.length < 6 || safePassword.length > 100) {
     return { ok: false, error: "Passwort muss 6-100 Zeichen haben" };

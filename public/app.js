@@ -124,6 +124,7 @@ let remoteStream = null;
 let pendingStatusImageData = "";
 let selfProfileImage = "";
 let pendingProfileImage = "";
+let toastContainer = null;
 
 const MAX_UPLOAD_IMAGE_BYTES = 450 * 1024;
 
@@ -208,6 +209,57 @@ function setPendingStatusImage(dataUrl) {
   const hasImage = !!pendingStatusImageData;
   statusImagePreview.classList.toggle("is-hidden", !hasImage);
   statusImagePreviewImg.src = hasImage ? pendingStatusImageData : "";
+}
+
+function ensureToastContainer() {
+  if (toastContainer) {
+    return toastContainer;
+  }
+  const container = document.createElement("div");
+  container.className = "toast-container";
+  document.body.appendChild(container);
+  toastContainer = container;
+  return container;
+}
+
+function showMessageToast(title, message) {
+  const container = ensureToastContainer();
+  const toast = document.createElement("div");
+  toast.className = "message-toast";
+  toast.innerHTML = `<strong>${title}</strong><div>${message}</div>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("hide");
+    setTimeout(() => toast.remove(), 220);
+  }, 3200);
+}
+
+function maybeShowBrowserNotification(title, body) {
+  if (!("Notification" in window)) {
+    return;
+  }
+  if (Notification.permission !== "granted") {
+    return;
+  }
+  if (!document.hidden) {
+    return;
+  }
+  try {
+    new Notification(title, { body });
+  } catch (_err) {
+  }
+}
+
+async function ensureNotificationPermission() {
+  if (!("Notification" in window)) {
+    return;
+  }
+  if (Notification.permission === "default") {
+    try {
+      await Notification.requestPermission();
+    } catch (_err) {
+    }
+  }
 }
 
 function getAvatarFallback(name) {
@@ -987,11 +1039,21 @@ function bindSocketEvents() {
   socket.on("private-message", (msg) => {
     messages.push(msg);
     renderMessages();
+    if (msg.from !== selfId) {
+      const body = msg.text || "Bild erhalten";
+      showMessageToast(`Neue Nachricht von ${msg.fromName}`, body);
+      maybeShowBrowserNotification(`Neue Nachricht von ${msg.fromName}`, body);
+    }
   });
 
   socket.on("group-message", (msg) => {
     groupMessages.push(msg);
     renderMessages();
+    if (msg.from !== selfId) {
+      const body = msg.text || "Bild erhalten";
+      showMessageToast(`Neue Gruppen-Nachricht (${msg.fromName})`, body);
+      maybeShowBrowserNotification(`Neue Gruppen-Nachricht`, `${msg.fromName}: ${body}`);
+    }
   });
 
   socket.on("direct-chat-cleared", ({ targetId }) => {
@@ -1078,6 +1140,7 @@ function connectSocket(token, user) {
   selfProfileImage = user.profileImage || "";
   pendingProfileImage = selfProfileImage;
   updateSelfAvatarUi();
+  ensureNotificationPermission();
   socket = io({ autoConnect: false, auth: { token } });
   bindSocketEvents();
   socket.connect();
