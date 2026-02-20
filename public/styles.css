@@ -137,6 +137,12 @@ body {
   gap: 8px;
 }
 
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .sidebar-actions {
   background: rgba(0, 0, 0, 0.14);
   border: 1px solid #21424a;
@@ -364,6 +370,18 @@ body {
   margin: 6px 0 10px;
 }
 
+.me-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-btn {
+  white-space: nowrap;
+  background: #23464f;
+}
+
 .logout-btn {
   width: 100%;
   margin-bottom: 10px;
@@ -387,6 +405,9 @@ h3 {
 
 .contact-btn {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   border: 0;
   background: var(--soft);
@@ -401,6 +422,36 @@ h3 {
   transform: translateX(3px);
   background: #24505c;
   box-shadow: inset 0 0 0 1px #2e6874;
+}
+
+.avatar-sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid #2f6874;
+  background: #0f2b33;
+}
+
+.avatar-lg {
+  width: 96px;
+  height: 96px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid #2f6874;
+  background: #0f2b33;
+}
+
+.settings-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .add-contact-form {

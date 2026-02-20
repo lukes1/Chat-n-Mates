@@ -29,13 +29,19 @@
     <aside class="sidebar">
       <div class="sidebar-top">
         <div class="sidebar-top-row">
-          <div class="brand">ChatnMates</div>
+          <div class="brand-wrap">
+            <img id="selfAvatar" class="avatar-sm" alt="Mein Profilbild" />
+            <div class="brand">ChatnMates</div>
+          </div>
           <button id="openRequestsBtn" class="requests-btn" type="button" title="Anfragen" aria-label="Anfragen">
             Anfragen
             <span id="requestCount" class="count-badge">0</span>
           </button>
         </div>
-        <div class="me" id="meLabel">Verbinde...</div>
+        <div class="me-row">
+          <div class="me" id="meLabel">Verbinde...</div>
+          <button id="openSettingsBtn" class="settings-btn" type="button">Einstellungen</button>
+        </div>
         <button id="logoutBtn" class="logout-btn">Logout</button>
       </div>
 
@@ -99,6 +105,24 @@
           <button type="submit">Gruppe erstellen</button>
         </form>
         <div id="groupFeedback" class="contact-feedback"></div>
+      </div>
+    </div>
+
+    <div id="settingsDialog" class="dialog-overlay is-hidden">
+      <div class="dialog-card">
+        <div class="dialog-head">
+          <h3>Einstellungen</h3>
+          <button id="closeSettingsDialogBtn" type="button">Schliessen</button>
+        </div>
+        <div class="settings-block">
+          <img id="settingsAvatarPreview" class="avatar-lg" alt="Profilbild Vorschau" />
+          <div class="settings-actions">
+            <button id="chooseProfileImageBtn" type="button">Profilbild waehlen</button>
+            <button id="removeProfileImageBtn" type="button" class="danger-btn">Profilbild entfernen</button>
+            <button id="saveProfileImageBtn" type="button">Speichern</button>
+          </div>
+          <input id="profileImageInput" class="file-input-hidden" type="file" accept="image/*" />
+        </div>
       </div>
     </div>
 

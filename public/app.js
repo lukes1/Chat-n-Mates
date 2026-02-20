@@ -21,6 +21,15 @@ const closeRequestsDialogBtn = document.getElementById("closeRequestsDialogBtn")
 const openAddContactBtn = document.getElementById("openAddContactBtn");
 const contactDialog = document.getElementById("contactDialog");
 const closeContactDialogBtn = document.getElementById("closeContactDialogBtn");
+const openSettingsBtn = document.getElementById("openSettingsBtn");
+const settingsDialog = document.getElementById("settingsDialog");
+const closeSettingsDialogBtn = document.getElementById("closeSettingsDialogBtn");
+const selfAvatar = document.getElementById("selfAvatar");
+const settingsAvatarPreview = document.getElementById("settingsAvatarPreview");
+const chooseProfileImageBtn = document.getElementById("chooseProfileImageBtn");
+const removeProfileImageBtn = document.getElementById("removeProfileImageBtn");
+const saveProfileImageBtn = document.getElementById("saveProfileImageBtn");
+const profileImageInput = document.getElementById("profileImageInput");
 
 const groupForm = document.getElementById("groupForm");
 const groupNameInput = document.getElementById("groupNameInput");
@@ -113,6 +122,8 @@ let callStartedAt = 0;
 let callTimer = null;
 let remoteStream = null;
 let pendingStatusImageData = "";
+let selfProfileImage = "";
+let pendingProfileImage = "";
 
 const MAX_UPLOAD_IMAGE_BYTES = 450 * 1024;
 
@@ -197,6 +208,25 @@ function setPendingStatusImage(dataUrl) {
   const hasImage = !!pendingStatusImageData;
   statusImagePreview.classList.toggle("is-hidden", !hasImage);
   statusImagePreviewImg.src = hasImage ? pendingStatusImageData : "";
+}
+
+function getAvatarFallback(name) {
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "User")}&background=1b5762&color=e7f7f1&size=64`;
+}
+
+function getAvatarSrc(user) {
+  const image = String(user?.profileImage || "").trim();
+  return image || getAvatarFallback(user?.name || user?.username || "User");
+}
+
+function updateSelfAvatarUi() {
+  const src = selfProfileImage || getAvatarFallback(selfName || "Ich");
+  if (selfAvatar) {
+    selfAvatar.src = src;
+  }
+  if (settingsAvatarPreview) {
+    settingsAvatarPreview.src = pendingProfileImage || src;
+  }
 }
 
 function setDialogOpen(dialog, open) {
@@ -430,7 +460,21 @@ function renderContacts() {
     const btn = document.createElement("button");
     const isActive = selectedTarget?.type === "user" && selectedTarget.id === user.id;
     btn.className = "contact-btn" + (isActive ? " active" : "");
-    btn.textContent = `${user.name} (${user.online ? "online" : "offline"})`;
+    const avatar = document.createElement("img");
+    avatar.className = "avatar-sm";
+    avatar.src = getAvatarSrc(user);
+    avatar.alt = `${user.name} Profilbild`;
+
+    const textWrap = document.createElement("div");
+    const nameEl = document.createElement("div");
+    nameEl.textContent = user.name;
+    const stateEl = document.createElement("small");
+    stateEl.textContent = user.online ? "online" : "offline";
+    textWrap.appendChild(nameEl);
+    textWrap.appendChild(stateEl);
+
+    btn.appendChild(avatar);
+    btn.appendChild(textWrap);
     btn.onclick = () => {
       selectedTarget = { type: "user", id: user.id };
       renderContacts();
@@ -861,7 +905,11 @@ function resetAppState() {
   setDialogOpen(contactDialog, false);
   setDialogOpen(groupDialog, false);
   setDialogOpen(requestsDialog, false);
+  setDialogOpen(settingsDialog, false);
   setPendingStatusImage("");
+  pendingProfileImage = "";
+  selfProfileImage = "";
+  updateSelfAvatarUi();
   if (contactCount) {
     contactCount.textContent = "0";
   }
@@ -887,6 +935,8 @@ function resetAppState() {
 function bindSocketEvents() {
   socket.on("bootstrap", (payload) => {
     selfId = payload.selfId;
+    selfProfileImage = payload.selfProfileImage || "";
+    pendingProfileImage = selfProfileImage;
     users = payload.users || [];
     groups = payload.groups || [];
     messages = payload.messages || [];
@@ -895,6 +945,7 @@ function bindSocketEvents() {
     incomingRequests = payload.contactRequests || [];
 
     meLabel.textContent = `Du: ${selfName}`;
+    updateSelfAvatarUi();
     renderContacts();
     renderGroups();
     renderMessages();
@@ -911,6 +962,12 @@ function bindSocketEvents() {
     users = nextUsers || [];
     renderContacts();
     renderMessages();
+  });
+
+  socket.on("profile-updated", ({ profileImage }) => {
+    selfProfileImage = String(profileImage || "");
+    pendingProfileImage = selfProfileImage;
+    updateSelfAvatarUi();
   });
 
   socket.on("groups-updated", (nextGroups) => {
@@ -1018,6 +1075,9 @@ function bindSocketEvents() {
 
 function connectSocket(token, user) {
   selfName = user.username;
+  selfProfileImage = user.profileImage || "";
+  pendingProfileImage = selfProfileImage;
+  updateSelfAvatarUi();
   socket = io({ autoConnect: false, auth: { token } });
   bindSocketEvents();
   socket.connect();
@@ -1284,6 +1344,47 @@ requestsDialog?.addEventListener("click", (event) => {
   if (event.target === requestsDialog) {
     setDialogOpen(requestsDialog, false);
   }
+});
+
+openSettingsBtn?.addEventListener("click", () => {
+  pendingProfileImage = selfProfileImage || "";
+  updateSelfAvatarUi();
+  setDialogOpen(settingsDialog, true);
+});
+closeSettingsDialogBtn?.addEventListener("click", () => setDialogOpen(settingsDialog, false));
+settingsDialog?.addEventListener("click", (event) => {
+  if (event.target === settingsDialog) {
+    setDialogOpen(settingsDialog, false);
+  }
+});
+
+chooseProfileImageBtn?.addEventListener("click", () => profileImageInput.click());
+profileImageInput?.addEventListener("change", async () => {
+  try {
+    const file = profileImageInput.files?.[0];
+    if (!file) {
+      return;
+    }
+    pendingProfileImage = await readImageAsDataUrl(file);
+    updateSelfAvatarUi();
+  } catch (err) {
+    alert(err.message || "Profilbild konnte nicht geladen werden.");
+  } finally {
+    profileImageInput.value = "";
+  }
+});
+
+removeProfileImageBtn?.addEventListener("click", () => {
+  pendingProfileImage = "";
+  updateSelfAvatarUi();
+});
+
+saveProfileImageBtn?.addEventListener("click", () => {
+  if (!socket) {
+    return;
+  }
+  socket.emit("profile-image-update", { imageData: pendingProfileImage });
+  setDialogOpen(settingsDialog, false);
 });
 
 deleteContactBtn.addEventListener("click", () => {

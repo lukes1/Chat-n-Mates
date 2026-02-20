@@ -101,11 +101,14 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
       username TEXT NOT NULL,
+      profile_image TEXT NOT NULL DEFAULT '',
       salt TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       created_at BIGINT NOT NULL
     );
   `);
+
+  await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS profile_image TEXT NOT NULL DEFAULT ''`);
 
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS accounts_username_ci_idx
@@ -251,6 +254,7 @@ async function createAccount(username, password) {
   const account = {
     id: `usr-${uuidv4()}`,
     username: normalizedUsername,
+    profileImage: "",
     salt,
     passwordHash,
     createdAt: Date.now(),
@@ -258,8 +262,8 @@ async function createAccount(username, password) {
 
   try {
     await pool.query(
-      `INSERT INTO accounts (id, username, salt, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)`,
-      [account.id, account.username, account.salt, account.passwordHash, account.createdAt]
+      `INSERT INTO accounts (id, username, profile_image, salt, password_hash, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [account.id, account.username, account.profileImage, account.salt, account.passwordHash, account.createdAt]
     );
     return { ok: true, account };
   } catch (err) {
@@ -273,7 +277,7 @@ async function createAccount(username, password) {
 async function getAccountByUsername(username) {
   const normalizedUsername = normalizeUsername(username);
   const result = await pool.query(
-    `SELECT id, username, salt, password_hash, created_at
+    `SELECT id, username, profile_image, salt, password_hash, created_at
      FROM accounts
      WHERE lower(username) = lower($1)
      LIMIT 1`,
@@ -286,6 +290,7 @@ async function getAccountByUsername(username) {
   return {
     id: row.id,
     username: row.username,
+    profileImage: row.profile_image || "",
     salt: row.salt,
     passwordHash: row.password_hash,
     createdAt: Number(row.created_at),
@@ -294,7 +299,7 @@ async function getAccountByUsername(username) {
 
 async function getAccountById(accountId) {
   const result = await pool.query(
-    `SELECT id, username, salt, password_hash, created_at FROM accounts WHERE id = $1 LIMIT 1`,
+    `SELECT id, username, profile_image, salt, password_hash, created_at FROM accounts WHERE id = $1 LIMIT 1`,
     [accountId]
   );
   if (!result.rowCount) {
@@ -304,6 +309,7 @@ async function getAccountById(accountId) {
   return {
     id: row.id,
     username: row.username,
+    profileImage: row.profile_image || "",
     salt: row.salt,
     passwordHash: row.password_hash,
     createdAt: Number(row.created_at),
@@ -922,7 +928,7 @@ async function deleteExpiredStatuses() {
 async function getUsersPayloadForAccount(accountId) {
   const result = await pool.query(
     `
-    SELECT a.id, a.username
+    SELECT a.id, a.username, a.profile_image
     FROM contacts c
     JOIN accounts a ON a.id = c.contact_id
     WHERE c.account_id = $1
@@ -934,6 +940,7 @@ async function getUsersPayloadForAccount(accountId) {
   const contacts = result.rows.map((row) => ({
     id: row.id,
     name: row.username,
+    profileImage: row.profile_image || "",
     online: socketsByAccount.has(row.id),
   }));
 
@@ -944,6 +951,7 @@ async function getUsersPayloadForAccount(accountId) {
   const bots = botUsers.map((bot) => ({
     id: bot.id,
     name: bot.name,
+    profileImage: "",
     online: true,
   }));
 
@@ -1031,6 +1039,7 @@ app.post("/auth/register", async (req, res) => {
       user: {
         id: result.account.id,
         username: result.account.username,
+        profileImage: result.account.profileImage || "",
       },
     });
   } catch (_err) {
@@ -1059,6 +1068,7 @@ app.post("/auth/login", async (req, res) => {
       user: {
         id: account.id,
         username: account.username,
+        profileImage: account.profileImage || "",
       },
     });
   } catch (_err) {
@@ -1085,6 +1095,7 @@ app.get("/auth/me", async (req, res) => {
       user: {
         id: account.id,
         username: account.username,
+        profileImage: account.profileImage || "",
       },
     });
   } catch (_err) {
@@ -1183,6 +1194,7 @@ io.on("connection", (socket) => {
     try {
       socket.emit("bootstrap", {
         selfId: account.id,
+        selfProfileImage: account.profileImage || "",
         users: await getUsersPayloadForAccount(account.id),
         groups: await getGroupsForAccount(account.id),
         messages: await getMessagesForAccount(account.id),
@@ -1196,6 +1208,20 @@ io.on("connection", (socket) => {
     } catch (_err) {
     }
   })();
+
+  socket.on("profile-image-update", async ({ imageData }) => {
+    try {
+      const currentUser = users.get(socket.id);
+      if (!currentUser) {
+        return;
+      }
+      const safeImageData = normalizeImageData(imageData);
+      await pool.query(`UPDATE accounts SET profile_image = $2 WHERE id = $1`, [currentUser.accountId, safeImageData]);
+      emitToAccount(currentUser.accountId, "profile-updated", { profileImage: safeImageData });
+      await notifyPresenceChange(currentUser.accountId);
+    } catch (_err) {
+    }
+  });
 
   socket.on("contact-request-send", async ({ username }) => {
     try {
