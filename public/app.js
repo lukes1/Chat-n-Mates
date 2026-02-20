@@ -14,12 +14,14 @@ const addContactForm = document.getElementById("addContactForm");
 const addContactInput = document.getElementById("addContactInput");
 const contactFeedback = document.getElementById("contactFeedback");
 const requestList = document.getElementById("requestList");
+const requestCount = document.getElementById("requestCount");
 
 const groupForm = document.getElementById("groupForm");
 const groupNameInput = document.getElementById("groupNameInput");
 const groupMembersInput = document.getElementById("groupMembersInput");
 const groupFeedback = document.getElementById("groupFeedback");
 const groupsList = document.getElementById("groupsList");
+const groupCount = document.getElementById("groupCount");
 const groupDetailsBox = document.getElementById("groupDetailsBox");
 const groupDetailsEmpty = document.getElementById("groupDetailsEmpty");
 const groupDetailsContent = document.getElementById("groupDetailsContent");
@@ -33,6 +35,7 @@ const groupLeaveBtn = document.getElementById("groupLeaveBtn");
 const toggleGroupDetailsBtn = document.getElementById("toggleGroupDetailsBtn");
 
 const contactsEl = document.getElementById("contacts");
+const contactCount = document.getElementById("contactCount");
 const messagesEl = document.getElementById("messages");
 const chatForm = document.getElementById("chatForm");
 const chatInput = document.getElementById("chatInput");
@@ -286,6 +289,9 @@ function renderContacts() {
   });
 
   if (!peers.length) {
+    if (contactCount) {
+      contactCount.textContent = "0";
+    }
     contactsEl.innerHTML = "<li>Keine Kontakte vorhanden</li>";
     if (selectedTarget?.type === "user") {
       selectedTarget = null;
@@ -316,6 +322,10 @@ function renderContacts() {
     contactsEl.appendChild(li);
   });
 
+  if (contactCount) {
+    contactCount.textContent = String(peers.length);
+  }
+
   updateChatHeader();
 }
 
@@ -324,6 +334,9 @@ function renderGroups() {
   const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
 
   if (!sorted.length) {
+    if (groupCount) {
+      groupCount.textContent = "0";
+    }
     groupsList.innerHTML = "<li>Keine Gruppen</li>";
     if (selectedTarget?.type === "group") {
       selectedTarget = null;
@@ -354,6 +367,10 @@ function renderGroups() {
     li.appendChild(btn);
     groupsList.appendChild(li);
   });
+
+  if (groupCount) {
+    groupCount.textContent = String(sorted.length);
+  }
 
   updateChatHeader();
   renderGroupDetails();
@@ -430,6 +447,9 @@ function renderStatuses() {
 function renderRequests() {
   requestList.innerHTML = "";
   if (!incomingRequests.length) {
+    if (requestCount) {
+      requestCount.textContent = "0";
+    }
     requestList.innerHTML = "<li>Keine offenen Anfragen</li>";
     return;
   }
@@ -455,6 +475,10 @@ function renderRequests() {
     li.appendChild(actions);
     requestList.appendChild(li);
   });
+
+  if (requestCount) {
+    requestCount.textContent = String(incomingRequests.length);
+  }
 }
 
 function renderGroupDetails() {
@@ -604,6 +628,15 @@ function resetAppState() {
   contactsEl.innerHTML = "";
   groupsList.innerHTML = "";
   requestList.innerHTML = "";
+  if (contactCount) {
+    contactCount.textContent = "0";
+  }
+  if (groupCount) {
+    groupCount.textContent = "0";
+  }
+  if (requestCount) {
+    requestCount.textContent = "0";
+  }
   messagesEl.innerHTML = "";
   statusList.innerHTML = "";
   meLabel.textContent = "Verbinde...";

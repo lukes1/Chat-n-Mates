@@ -27,26 +27,52 @@
 
   <div class="app is-hidden" id="appRoot">
     <aside class="sidebar">
-      <div class="brand">ChatnMates</div>
-      <div class="me" id="meLabel">Verbinde...</div>
-      <button id="logoutBtn" class="logout-btn">Logout</button>
-      <form id="addContactForm" class="add-contact-form">
-        <input id="addContactInput" type="text" maxlength="30" placeholder="Kontakt-Username" />
-        <button type="submit">Hinzufuegen</button>
-      </form>
-      <div id="contactFeedback" class="contact-feedback"></div>
-      <h3>Anfragen</h3>
-      <ul id="requestList" class="request-list"></ul>
-      <h3>Gruppen</h3>
-      <form id="groupForm" class="group-form">
-        <input id="groupNameInput" type="text" maxlength="40" placeholder="Gruppenname" />
-        <input id="groupMembersInput" type="text" maxlength="200" placeholder="Mitglieder (Comma-separiert)" />
-        <button type="submit">Gruppe erstellen</button>
-      </form>
-      <div id="groupFeedback" class="contact-feedback"></div>
-      <ul id="groupsList" class="request-list"></ul>
-      <h3>Kontakte</h3>
-      <ul id="contacts" class="contacts"></ul>
+      <div class="sidebar-top">
+        <div class="brand">ChatnMates</div>
+        <div class="me" id="meLabel">Verbinde...</div>
+        <button id="logoutBtn" class="logout-btn">Logout</button>
+      </div>
+
+      <div class="sidebar-actions">
+        <form id="addContactForm" class="add-contact-form">
+          <input id="addContactInput" type="text" maxlength="30" placeholder="Kontakt-Username" />
+          <button type="submit">Hinzufuegen</button>
+        </form>
+        <div id="contactFeedback" class="contact-feedback"></div>
+
+        <form id="groupForm" class="group-form">
+          <input id="groupNameInput" type="text" maxlength="40" placeholder="Gruppenname" />
+          <input id="groupMembersInput" type="text" maxlength="200" placeholder="Mitglieder (Comma-separiert)" />
+          <button type="submit">Gruppe erstellen</button>
+        </form>
+        <div id="groupFeedback" class="contact-feedback"></div>
+      </div>
+
+      <div class="sidebar-sections">
+        <section class="sidebar-card">
+          <div class="section-head">
+            <h3>Anfragen</h3>
+            <span id="requestCount" class="count-badge">0</span>
+          </div>
+          <ul id="requestList" class="request-list section-list"></ul>
+        </section>
+
+        <section class="sidebar-card">
+          <div class="section-head">
+            <h3>Gruppen</h3>
+            <span id="groupCount" class="count-badge">0</span>
+          </div>
+          <ul id="groupsList" class="request-list section-list"></ul>
+        </section>
+
+        <section class="sidebar-card">
+          <div class="section-head">
+            <h3>Kontakte</h3>
+            <span id="contactCount" class="count-badge">0</span>
+          </div>
+          <ul id="contacts" class="contacts section-list"></ul>
+        </section>
+      </div>
     </aside>
 
     <main class="main">
