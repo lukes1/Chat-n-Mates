@@ -141,6 +141,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .sidebar-actions {
@@ -223,6 +224,8 @@ body {
   border: 1px solid #3a7f8c;
   background: linear-gradient(145deg, #1b5762, #23464f);
   font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .requests-btn .count-badge {
@@ -363,6 +366,9 @@ body {
   font-size: 1.3rem;
   font-weight: 700;
   color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .me {
@@ -378,8 +384,17 @@ body {
 }
 
 .settings-btn {
-  white-space: nowrap;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border-radius: 999px;
   background: #23464f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
 }
 
 .logout-btn {
