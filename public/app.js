@@ -15,6 +15,9 @@ const addContactInput = document.getElementById("addContactInput");
 const contactFeedback = document.getElementById("contactFeedback");
 const requestList = document.getElementById("requestList");
 const requestCount = document.getElementById("requestCount");
+const openAddContactBtn = document.getElementById("openAddContactBtn");
+const contactDialog = document.getElementById("contactDialog");
+const closeContactDialogBtn = document.getElementById("closeContactDialogBtn");
 
 const groupForm = document.getElementById("groupForm");
 const groupNameInput = document.getElementById("groupNameInput");
@@ -22,6 +25,9 @@ const groupMembersInput = document.getElementById("groupMembersInput");
 const groupFeedback = document.getElementById("groupFeedback");
 const groupsList = document.getElementById("groupsList");
 const groupCount = document.getElementById("groupCount");
+const openCreateGroupBtn = document.getElementById("openCreateGroupBtn");
+const groupDialog = document.getElementById("groupDialog");
+const closeGroupDialogBtn = document.getElementById("closeGroupDialogBtn");
 const groupDetailsBox = document.getElementById("groupDetailsBox");
 const groupDetailsEmpty = document.getElementById("groupDetailsEmpty");
 const groupDetailsContent = document.getElementById("groupDetailsContent");
@@ -145,6 +151,13 @@ function setContactFeedback(message) {
 
 function setGroupFeedback(message) {
   groupFeedback.textContent = message || "";
+}
+
+function setDialogOpen(dialog, open) {
+  if (!dialog) {
+    return;
+  }
+  dialog.classList.toggle("is-hidden", !open);
 }
 
 function getStoredToken() {
@@ -628,6 +641,8 @@ function resetAppState() {
   contactsEl.innerHTML = "";
   groupsList.innerHTML = "";
   requestList.innerHTML = "";
+  setDialogOpen(contactDialog, false);
+  setDialogOpen(groupDialog, false);
   if (contactCount) {
     contactCount.textContent = "0";
   }
@@ -894,6 +909,34 @@ groupForm.addEventListener("submit", (event) => {
   socket.emit("group-create", { name, members });
   groupNameInput.value = "";
   groupMembersInput.value = "";
+});
+
+openAddContactBtn?.addEventListener("click", () => {
+  setDialogOpen(contactDialog, true);
+  setContactFeedback("");
+  addContactInput.focus();
+});
+
+closeContactDialogBtn?.addEventListener("click", () => setDialogOpen(contactDialog, false));
+
+openCreateGroupBtn?.addEventListener("click", () => {
+  setDialogOpen(groupDialog, true);
+  setGroupFeedback("");
+  groupNameInput.focus();
+});
+
+closeGroupDialogBtn?.addEventListener("click", () => setDialogOpen(groupDialog, false));
+
+contactDialog?.addEventListener("click", (event) => {
+  if (event.target === contactDialog) {
+    setDialogOpen(contactDialog, false);
+  }
+});
+
+groupDialog?.addEventListener("click", (event) => {
+  if (event.target === groupDialog) {
+    setDialogOpen(groupDialog, false);
+  }
 });
 
 groupMetaSaveBtn.addEventListener("click", () => {

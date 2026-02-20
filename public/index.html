@@ -34,18 +34,8 @@
       </div>
 
       <div class="sidebar-actions">
-        <form id="addContactForm" class="add-contact-form">
-          <input id="addContactInput" type="text" maxlength="30" placeholder="Kontakt-Username" />
-          <button type="submit">Hinzufuegen</button>
-        </form>
-        <div id="contactFeedback" class="contact-feedback"></div>
-
-        <form id="groupForm" class="group-form">
-          <input id="groupNameInput" type="text" maxlength="40" placeholder="Gruppenname" />
-          <input id="groupMembersInput" type="text" maxlength="200" placeholder="Mitglieder (Comma-separiert)" />
-          <button type="submit">Gruppe erstellen</button>
-        </form>
-        <div id="groupFeedback" class="contact-feedback"></div>
+        <button id="openAddContactBtn" class="quick-action-btn" type="button" title="Kontakt hinzufuegen" aria-label="Kontakt hinzufuegen">👤+</button>
+        <button id="openCreateGroupBtn" class="quick-action-btn" type="button" title="Gruppe erstellen" aria-label="Gruppe erstellen">👥+</button>
       </div>
 
       <div class="sidebar-sections">
@@ -74,6 +64,35 @@
         </section>
       </div>
     </aside>
+
+    <div id="contactDialog" class="dialog-overlay is-hidden">
+      <div class="dialog-card">
+        <div class="dialog-head">
+          <h3>Kontakt hinzufuegen</h3>
+          <button id="closeContactDialogBtn" type="button">Schliessen</button>
+        </div>
+        <form id="addContactForm" class="add-contact-form">
+          <input id="addContactInput" type="text" maxlength="30" placeholder="Kontakt-Username" />
+          <button type="submit">Hinzufuegen</button>
+        </form>
+        <div id="contactFeedback" class="contact-feedback"></div>
+      </div>
+    </div>
+
+    <div id="groupDialog" class="dialog-overlay is-hidden">
+      <div class="dialog-card">
+        <div class="dialog-head">
+          <h3>Gruppe erstellen</h3>
+          <button id="closeGroupDialogBtn" type="button">Schliessen</button>
+        </div>
+        <form id="groupForm" class="group-form">
+          <input id="groupNameInput" type="text" maxlength="40" placeholder="Gruppenname" />
+          <input id="groupMembersInput" type="text" maxlength="200" placeholder="Mitglieder (Comma-separiert)" />
+          <button type="submit">Gruppe erstellen</button>
+        </form>
+        <div id="groupFeedback" class="contact-feedback"></div>
+      </div>
+    </div>
 
     <main class="main">
       <div class="main-tabs">

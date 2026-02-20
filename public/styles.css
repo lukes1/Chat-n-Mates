@@ -76,6 +76,8 @@ body {
   gap: 14px;
   padding: 14px;
   min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app.sidepanel-hidden {
@@ -127,6 +129,17 @@ body {
   border: 1px solid #21424a;
   border-radius: 12px;
   padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.quick-action-btn {
+  width: 100%;
+  font-size: 1.05rem;
+  font-weight: 600;
+  border: 1px solid #3a7f8c;
+  background: linear-gradient(145deg, #1b5762, #23464f);
 }
 
 .sidebar-sections {
@@ -194,6 +207,36 @@ body {
 
 .group-details-toggle.active {
   background: linear-gradient(145deg, #219a60, #1b7a52);
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(9, 22, 24, 0.72);
+}
+
+.dialog-card {
+  width: min(560px, 100%);
+  background: rgba(16, 33, 38, 0.98);
+  border: 1px solid #2b525a;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dialog-head h3 {
+  margin: 0;
 }
 
 .brand {
@@ -514,6 +557,9 @@ video {
   .app.sidepanel-hidden,
   .app.sidepanel-compact {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
   }
 
   .sidebar,
