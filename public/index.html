@@ -13,7 +13,7 @@
       <p class="auth-subline">Registrieren oder mit bestehendem Account anmelden</p>
       <form id="authForm" class="auth-form">
         <label for="usernameInput">Username</label>
-        <input id="usernameInput" type="text" maxlength="30" placeholder="z. B. lukes1" required />
+        <input id="usernameInput" type="text" maxlength="30" placeholder="z. B. Max Mustermann" required />
         <label for="passwordInput">Passwort</label>
         <input id="passwordInput" type="password" minlength="6" maxlength="100" placeholder="Mindestens 6 Zeichen" required />
         <div class="auth-actions">
@@ -34,8 +34,8 @@
       </div>
 
       <div class="sidebar-actions">
-        <button id="openAddContactBtn" class="quick-action-btn" type="button" title="Kontakt hinzufuegen" aria-label="Kontakt hinzufuegen">👤+</button>
-        <button id="openCreateGroupBtn" class="quick-action-btn" type="button" title="Gruppe erstellen" aria-label="Gruppe erstellen">👥+</button>
+        <button id="openAddContactBtn" class="quick-action-btn" type="button" title="Kontakt hinzufuegen" aria-label="Kontakt hinzufuegen">+ Kontakt</button>
+        <button id="openCreateGroupBtn" class="quick-action-btn" type="button" title="Gruppe erstellen" aria-label="Gruppe erstellen">+ Gruppe</button>
       </div>
 
       <div class="sidebar-sections">
@@ -157,12 +157,30 @@
         </div>
       </div>
 
-      <div class="media-box is-hidden" id="mediaBox">
-        <div class="media-title">Call</div>
-        <video id="localVideo" autoplay playsinline muted></video>
-        <video id="remoteVideo" autoplay playsinline></video>
-      </div>
     </aside>
+  </div>
+
+  <div id="callDialog" class="dialog-overlay is-hidden">
+    <div class="dialog-card call-dialog-card">
+      <div class="dialog-head">
+        <h3 id="callDialogTitle">Anruf</h3>
+        <button id="callCloseBtn" type="button">Schliessen</button>
+      </div>
+      <div id="callStatusText" class="call-status-text">Verbinde...</div>
+      <div id="callDuration" class="call-duration">00:00</div>
+      <div id="callVideoWrap" class="call-video-wrap is-hidden">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay playsinline muted></video>
+      </div>
+      <div id="callAudioOnly" class="call-audio-only is-hidden">Telefonat aktiv</div>
+      <div class="call-popup-actions">
+        <button id="callAcceptBtn" type="button" class="accept-btn is-hidden">Annehmen</button>
+        <button id="callRejectBtn" type="button" class="danger-btn is-hidden">Ablehnen</button>
+        <button id="callMuteBtn" type="button" class="is-hidden">Stumm</button>
+        <button id="callCameraBtn" type="button" class="is-hidden">Kamera aus</button>
+        <button id="callHangupBtn" type="button" class="danger-btn is-hidden">Auflegen</button>
+      </div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

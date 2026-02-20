@@ -136,8 +136,9 @@ body {
 
 .quick-action-btn {
   width: 100%;
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   border: 1px solid #3a7f8c;
   background: linear-gradient(145deg, #1b5762, #23464f);
 }
@@ -237,6 +238,62 @@ body {
 
 .dialog-head h3 {
   margin: 0;
+}
+
+.call-dialog-card {
+  width: min(760px, 100%);
+}
+
+.call-status-text {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.call-duration {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.call-video-wrap {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.call-video-wrap #remoteVideo {
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+}
+
+.call-video-wrap #localVideo {
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+}
+
+.call-audio-only {
+  border: 1px solid #2b525a;
+  border-radius: 12px;
+  padding: 20px 12px;
+  text-align: center;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+.call-popup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accept-btn {
+  background: #1f8a57;
+}
+
+.danger-btn {
+  background: #8b2d2d;
 }
 
 .brand {
@@ -586,5 +643,9 @@ video {
 
   .sidebar-card {
     min-height: 140px;
+  }
+
+  .call-video-wrap {
+    grid-template-columns: 1fr;
   }
 }
