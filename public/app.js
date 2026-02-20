@@ -15,6 +15,9 @@ const addContactInput = document.getElementById("addContactInput");
 const contactFeedback = document.getElementById("contactFeedback");
 const requestList = document.getElementById("requestList");
 const requestCount = document.getElementById("requestCount");
+const openRequestsBtn = document.getElementById("openRequestsBtn");
+const requestsDialog = document.getElementById("requestsDialog");
+const closeRequestsDialogBtn = document.getElementById("closeRequestsDialogBtn");
 const openAddContactBtn = document.getElementById("openAddContactBtn");
 const contactDialog = document.getElementById("contactDialog");
 const closeContactDialogBtn = document.getElementById("closeContactDialogBtn");
@@ -49,6 +52,7 @@ const chatImageBtn = document.getElementById("chatImageBtn");
 const chatImageInput = document.getElementById("chatImageInput");
 const statusForm = document.getElementById("statusForm");
 const statusInput = document.getElementById("statusInput");
+const statusDescriptionInput = document.getElementById("statusDescriptionInput");
 const statusImageBtn = document.getElementById("statusImageBtn");
 const statusImageInput = document.getElementById("statusImageInput");
 const statusList = document.getElementById("statusList");
@@ -546,6 +550,21 @@ function renderStatuses() {
     const ageNode = document.createElement("small");
     ageNode.textContent = fmtAge(status.createdAt);
     li.appendChild(ageNode);
+
+    if (status.description) {
+      const desc = document.createElement("div");
+      desc.className = "status-description";
+      desc.textContent = status.description;
+      li.appendChild(desc);
+    }
+
+    if (status.userId === selfId) {
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "danger-btn";
+      deleteBtn.textContent = "Status löschen";
+      deleteBtn.onclick = () => socket?.emit("status-delete", { statusId: status.id });
+      li.appendChild(deleteBtn);
+    }
     statusList.appendChild(li);
   });
 }
@@ -556,6 +575,7 @@ function renderRequests() {
     if (requestCount) {
       requestCount.textContent = "0";
     }
+    openRequestsBtn?.classList.remove("has-alert");
     requestList.innerHTML = "<li>Keine offenen Anfragen</li>";
     return;
   }
@@ -585,6 +605,7 @@ function renderRequests() {
   if (requestCount) {
     requestCount.textContent = String(incomingRequests.length);
   }
+  openRequestsBtn?.classList.add("has-alert");
 }
 
 function renderGroupDetails() {
@@ -828,6 +849,7 @@ function resetAppState() {
   requestList.innerHTML = "";
   setDialogOpen(contactDialog, false);
   setDialogOpen(groupDialog, false);
+  setDialogOpen(requestsDialog, false);
   if (contactCount) {
     contactCount.textContent = "0";
   }
@@ -1210,9 +1232,11 @@ chatImageInput.addEventListener("change", async () => {
 statusForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = statusInput.value.trim();
+  const description = statusDescriptionInput.value.trim();
   if (!text || !socket) return;
-  socket.emit("status-create", { text });
+  socket.emit("status-create", { text, description });
   statusInput.value = "";
+  statusDescriptionInput.value = "";
 });
 
 statusImageBtn.addEventListener("click", () => {
@@ -1230,12 +1254,22 @@ statusImageInput.addEventListener("change", async () => {
     }
     const imageData = await readImageAsDataUrl(file);
     const text = statusInput.value.trim();
-    socket.emit("status-create", { text, imageData });
+    const description = statusDescriptionInput.value.trim();
+    socket.emit("status-create", { text, description, imageData });
     statusInput.value = "";
+    statusDescriptionInput.value = "";
   } catch (err) {
     alert(err.message || "Status-Bild konnte nicht gesendet werden.");
   } finally {
     statusImageInput.value = "";
+  }
+});
+
+openRequestsBtn?.addEventListener("click", () => setDialogOpen(requestsDialog, true));
+closeRequestsDialogBtn?.addEventListener("click", () => setDialogOpen(requestsDialog, false));
+requestsDialog?.addEventListener("click", (event) => {
+  if (event.target === requestsDialog) {
+    setDialogOpen(requestsDialog, false);
   }
 });
 

@@ -218,12 +218,14 @@ async function initDb() {
       user_id TEXT NOT NULL,
       user_name TEXT NOT NULL,
       text TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
       image_data TEXT NOT NULL DEFAULT '',
       created_at BIGINT NOT NULL,
       expires_at BIGINT NOT NULL
     );
   `);
 
+  await pool.query(`ALTER TABLE statuses ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
   await pool.query(`ALTER TABLE statuses ADD COLUMN IF NOT EXISTS image_data TEXT NOT NULL DEFAULT ''`);
 
   await pool.query(`
@@ -871,10 +873,19 @@ async function getMessagesForAccount(accountId) {
 async function insertStatus(status) {
   await pool.query(
     `
-    INSERT INTO statuses (id, user_id, user_name, text, image_data, created_at, expires_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    INSERT INTO statuses (id, user_id, user_name, text, description, image_data, created_at, expires_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     `,
-    [status.id, status.userId, status.userName, status.text, status.imageData || "", status.createdAt, status.expiresAt]
+    [
+      status.id,
+      status.userId,
+      status.userName,
+      status.text,
+      status.description || "",
+      status.imageData || "",
+      status.createdAt,
+      status.expiresAt,
+    ]
   );
 }
 
@@ -882,7 +893,7 @@ async function getVisibleStatuses() {
   const now = Date.now();
   const result = await pool.query(
     `
-    SELECT id, user_id, user_name, text, image_data, created_at, expires_at
+    SELECT id, user_id, user_name, text, description, image_data, created_at, expires_at
     FROM statuses
     WHERE expires_at > $1
     ORDER BY created_at DESC
@@ -895,6 +906,7 @@ async function getVisibleStatuses() {
     userId: row.user_id,
     userName: row.user_name,
     text: row.text,
+    description: row.description || "",
     imageData: row.image_data || "",
     createdAt: Number(row.created_at),
     expiresAt: Number(row.expires_at),
@@ -1618,10 +1630,11 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("status-create", async ({ text, imageData }) => {
+  socket.on("status-create", async ({ text, description, imageData }) => {
     try {
       const fromUser = users.get(socket.id);
       const safeText = String(text || "").trim().slice(0, 300);
+      const safeDescription = String(description || "").trim().slice(0, 300);
       const safeImageData = normalizeImageData(imageData);
 
       if (!fromUser || (!safeText && !safeImageData)) {
@@ -1634,12 +1647,26 @@ io.on("connection", (socket) => {
         userId: fromUser.accountId,
         userName: fromUser.name,
         text: safeText,
+        description: safeDescription,
         imageData: safeImageData,
         createdAt: now,
         expiresAt: now + STATUS_TTL_MS,
       };
 
       await insertStatus(status);
+      io.emit("statuses-updated", await getVisibleStatuses());
+    } catch (_err) {
+    }
+  });
+
+  socket.on("status-delete", async ({ statusId }) => {
+    try {
+      const fromUser = users.get(socket.id);
+      const safeStatusId = String(statusId || "").trim();
+      if (!fromUser || !safeStatusId) {
+        return;
+      }
+      await pool.query(`DELETE FROM statuses WHERE id = $1 AND user_id = $2`, [safeStatusId, fromUser.accountId]);
       io.emit("statuses-updated", await getVisibleStatuses());
     } catch (_err) {
     }

@@ -28,7 +28,13 @@
   <div class="app is-hidden" id="appRoot">
     <aside class="sidebar">
       <div class="sidebar-top">
-        <div class="brand">ChatnMates</div>
+        <div class="sidebar-top-row">
+          <div class="brand">ChatnMates</div>
+          <button id="openRequestsBtn" class="requests-btn" type="button" title="Anfragen" aria-label="Anfragen">
+            Anfragen
+            <span id="requestCount" class="count-badge">0</span>
+          </button>
+        </div>
         <div class="me" id="meLabel">Verbinde...</div>
         <button id="logoutBtn" class="logout-btn">Logout</button>
       </div>
@@ -39,14 +45,6 @@
       </div>
 
       <div class="sidebar-sections">
-        <section class="sidebar-card">
-          <div class="section-head">
-            <h3>Anfragen</h3>
-            <span id="requestCount" class="count-badge">0</span>
-          </div>
-          <ul id="requestList" class="request-list section-list"></ul>
-        </section>
-
         <section class="sidebar-card">
           <div class="section-head">
             <h3>Gruppen</h3>
@@ -64,6 +62,16 @@
         </section>
       </div>
     </aside>
+
+    <div id="requestsDialog" class="dialog-overlay is-hidden">
+      <div class="dialog-card">
+        <div class="dialog-head">
+          <h3>Anfragen</h3>
+          <button id="closeRequestsDialogBtn" type="button">Schliessen</button>
+        </div>
+        <ul id="requestList" class="request-list"></ul>
+      </div>
+    </div>
 
     <div id="contactDialog" class="dialog-overlay is-hidden">
       <div class="dialog-card">
@@ -134,6 +142,7 @@
           <button id="statusImageBtn" class="icon-circle-btn" type="button" title="Status-Bild senden" aria-label="Status-Bild senden">📷</button>
           <input id="statusImageInput" class="file-input-hidden" type="file" accept="image/*" />
           <input id="statusInput" type="text" placeholder="Neuer Status..." maxlength="300" />
+          <input id="statusDescriptionInput" type="text" placeholder="Beschreibung (optional)" maxlength="300" />
           <button type="submit">Posten</button>
         </form>
         <ul id="statusList" class="status-list"></ul>

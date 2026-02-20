@@ -124,6 +124,13 @@ body {
   padding: 2px 2px 0;
 }
 
+.sidebar-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .sidebar-actions {
   background: rgba(0, 0, 0, 0.14);
   border: 1px solid #21424a;
@@ -145,7 +152,7 @@ body {
 
 .sidebar-sections {
   display: grid;
-  grid-template-rows: minmax(110px, 0.9fr) minmax(130px, 1fr) minmax(170px, 1.3fr);
+  grid-template-rows: minmax(160px, 1fr) minmax(220px, 1.4fr);
   gap: 10px;
   min-height: 0;
   flex: 1;
@@ -188,6 +195,25 @@ body {
   font-weight: 700;
 }
 
+.requests-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid #3a7f8c;
+  background: linear-gradient(145deg, #1b5762, #23464f);
+  font-weight: 700;
+}
+
+.requests-btn .count-badge {
+  background: #8b2d2d;
+}
+
+.requests-btn.has-alert {
+  box-shadow: 0 0 0 2px rgba(255, 106, 106, 0.35);
+}
+
 .section-list {
   overflow-y: auto;
   min-height: 0;
@@ -226,6 +252,11 @@ body {
   border: 1px solid #2b525a;
   border-radius: 14px;
   padding: 14px;
+}
+
+#requestsDialog .request-list {
+  max-height: min(58vh, 420px);
+  overflow-y: auto;
 }
 
 .dialog-head {
@@ -487,6 +518,14 @@ button:disabled {
   align-items: center;
 }
 
+.status-form {
+  flex-wrap: wrap;
+}
+
+#statusDescriptionInput {
+  flex-basis: 100%;
+}
+
 #statusView {
   overflow-y: auto;
   padding: 0 12px 12px;
@@ -567,6 +606,12 @@ textarea {
   padding: 9px;
 }
 
+.status-description {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .chat-image,
 .status-image {
   display: block;
@@ -638,7 +683,7 @@ video {
   }
 
   .sidebar-sections {
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto;
   }
 
   .sidebar-card {
