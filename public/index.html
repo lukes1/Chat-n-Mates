@@ -69,6 +69,8 @@
         <section id="messages" class="messages"></section>
 
         <form id="chatForm" class="chat-form">
+          <button id="chatImageBtn" class="icon-circle-btn" type="button" title="Bild senden" aria-label="Bild senden">📷</button>
+          <input id="chatImageInput" class="file-input-hidden" type="file" accept="image/*" />
           <input id="chatInput" type="text" placeholder="Nachricht schreiben..." maxlength="2000" autocomplete="off" />
           <button type="submit">Senden</button>
         </form>
@@ -82,8 +84,10 @@
       </section>
 
       <section id="statusView" class="is-hidden">
-        <h3>Status (24h)</h3>
+        <h3>Status (1h)</h3>
         <form id="statusForm" class="status-form">
+          <button id="statusImageBtn" class="icon-circle-btn" type="button" title="Status-Bild senden" aria-label="Status-Bild senden">📷</button>
+          <input id="statusImageInput" class="file-input-hidden" type="file" accept="image/*" />
           <input id="statusInput" type="text" placeholder="Neuer Status..." maxlength="300" />
           <button type="submit">Posten</button>
         </form>

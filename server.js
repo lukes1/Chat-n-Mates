@@ -43,17 +43,32 @@ const botUsers = [
 ];
 const botUsersById = new Map(botUsers.map((bot) => [bot.id, bot]));
 
-const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
+const STATUS_TTL_MS = 60 * 60 * 1000;
 const MAX_MESSAGES = 1000;
 const MAX_GROUP_MESSAGES = 2000;
 const BOT_ACTIVE_INTERVAL_MS = 25 * 1000;
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_IMAGE_DATA_LENGTH = 900_000;
 
 function normalizeUsername(username) {
   return String(username || "")
     .trim()
     .replace(/\s+/g, " ")
     .slice(0, 30);
+}
+
+function normalizeImageData(imageData) {
+  const value = String(imageData || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (value.length > MAX_IMAGE_DATA_LENGTH) {
+    return "";
+  }
+  if (!/^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=]+$/i.test(value)) {
+    return "";
+  }
+  return value;
 }
 
 function hashPassword(password, salt) {
@@ -162,9 +177,12 @@ async function initDb() {
       from_id TEXT NOT NULL,
       from_name TEXT NOT NULL,
       text TEXT NOT NULL,
+      image_data TEXT NOT NULL DEFAULT '',
       timestamp BIGINT NOT NULL
     );
   `);
+
+  await pool.query(`ALTER TABLE group_messages ADD COLUMN IF NOT EXISTS image_data TEXT NOT NULL DEFAULT ''`);
 
   await pool.query(`
     CREATE INDEX IF NOT EXISTS group_messages_group_idx
@@ -179,9 +197,12 @@ async function initDb() {
       to_id TEXT NOT NULL,
       to_name TEXT NOT NULL,
       text TEXT NOT NULL,
+      image_data TEXT NOT NULL DEFAULT '',
       timestamp BIGINT NOT NULL
     );
   `);
+
+  await pool.query(`ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS image_data TEXT NOT NULL DEFAULT ''`);
 
   await pool.query(`
     CREATE INDEX IF NOT EXISTS private_messages_to_idx ON private_messages (to_id, timestamp DESC);
@@ -197,14 +218,19 @@ async function initDb() {
       user_id TEXT NOT NULL,
       user_name TEXT NOT NULL,
       text TEXT NOT NULL,
+      image_data TEXT NOT NULL DEFAULT '',
       created_at BIGINT NOT NULL,
       expires_at BIGINT NOT NULL
     );
   `);
 
+  await pool.query(`ALTER TABLE statuses ADD COLUMN IF NOT EXISTS image_data TEXT NOT NULL DEFAULT ''`);
+
   await pool.query(`
     CREATE INDEX IF NOT EXISTS statuses_expires_idx ON statuses (expires_at);
   `);
+
+  await pool.query(`DELETE FROM statuses WHERE (expires_at - created_at) > $1`, [STATUS_TTL_MS]);
 }
 
 async function createAccount(username, password) {
@@ -734,10 +760,10 @@ async function removeGroupMember(ownerId, groupId, memberId) {
 async function saveGroupMessage(message) {
   await pool.query(
     `
-    INSERT INTO group_messages (id, group_id, from_id, from_name, text, timestamp)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO group_messages (id, group_id, from_id, from_name, text, image_data, timestamp)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     `,
-    [message.id, message.groupId, message.from, message.fromName, message.text, message.timestamp]
+    [message.id, message.groupId, message.from, message.fromName, message.text, message.imageData || "", message.timestamp]
   );
 
   await pool.query(
@@ -757,7 +783,7 @@ async function saveGroupMessage(message) {
 async function getGroupMessagesForAccount(accountId) {
   const result = await pool.query(
     `
-    SELECT gm.id, gm.group_id, gm.from_id, gm.from_name, gm.text, gm.timestamp
+    SELECT gm.id, gm.group_id, gm.from_id, gm.from_name, gm.text, gm.image_data, gm.timestamp
     FROM group_messages gm
     JOIN group_members m ON m.group_id = gm.group_id
     WHERE m.account_id = $1
@@ -774,6 +800,7 @@ async function getGroupMessagesForAccount(accountId) {
       from: row.from_id,
       fromName: row.from_name,
       text: row.text,
+      imageData: row.image_data || "",
       timestamp: Number(row.timestamp),
     }))
     .reverse();
@@ -786,8 +813,8 @@ async function clearGroupChat(groupId) {
 async function saveMessage(message) {
   await pool.query(
     `
-    INSERT INTO private_messages (id, from_id, from_name, to_id, to_name, text, timestamp)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    INSERT INTO private_messages (id, from_id, from_name, to_id, to_name, text, image_data, timestamp)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     `,
     [
       message.id,
@@ -796,6 +823,7 @@ async function saveMessage(message) {
       message.to,
       message.toName,
       message.text,
+      message.imageData || "",
       message.timestamp,
     ]
   );
@@ -817,7 +845,7 @@ async function saveMessage(message) {
 async function getMessagesForAccount(accountId) {
   const result = await pool.query(
     `
-    SELECT id, from_id, from_name, to_id, to_name, text, timestamp
+    SELECT id, from_id, from_name, to_id, to_name, text, image_data, timestamp
     FROM private_messages
     WHERE from_id = $1 OR to_id = $1
     ORDER BY timestamp DESC
@@ -834,6 +862,7 @@ async function getMessagesForAccount(accountId) {
       to: row.to_id,
       toName: row.to_name,
       text: row.text,
+      imageData: row.image_data || "",
       timestamp: Number(row.timestamp),
     }))
     .reverse();
@@ -842,10 +871,10 @@ async function getMessagesForAccount(accountId) {
 async function insertStatus(status) {
   await pool.query(
     `
-    INSERT INTO statuses (id, user_id, user_name, text, created_at, expires_at)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO statuses (id, user_id, user_name, text, image_data, created_at, expires_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     `,
-    [status.id, status.userId, status.userName, status.text, status.createdAt, status.expiresAt]
+    [status.id, status.userId, status.userName, status.text, status.imageData || "", status.createdAt, status.expiresAt]
   );
 }
 
@@ -853,7 +882,7 @@ async function getVisibleStatuses() {
   const now = Date.now();
   const result = await pool.query(
     `
-    SELECT id, user_id, user_name, text, created_at, expires_at
+    SELECT id, user_id, user_name, text, image_data, created_at, expires_at
     FROM statuses
     WHERE expires_at > $1
     ORDER BY created_at DESC
@@ -866,6 +895,7 @@ async function getVisibleStatuses() {
     userId: row.user_id,
     userName: row.user_name,
     text: row.text,
+    imageData: row.image_data || "",
     createdAt: Number(row.created_at),
     expiresAt: Number(row.expires_at),
   }));
@@ -1457,11 +1487,12 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("private-message", async ({ to, text }) => {
+  socket.on("private-message", async ({ to, text, imageData }) => {
     try {
       const fromUser = users.get(socket.id);
       const safeText = String(text || "").trim().slice(0, 2000);
-      if (!fromUser || !safeText) {
+      const safeImageData = normalizeImageData(imageData);
+      if (!fromUser || (!safeText && !safeImageData)) {
         return;
       }
 
@@ -1490,6 +1521,7 @@ io.on("connection", (socket) => {
         to: targetUser.id,
         toName: targetUser.name,
         text: safeText,
+        imageData: safeImageData,
         timestamp: Date.now(),
       };
 
@@ -1505,6 +1537,7 @@ io.on("connection", (socket) => {
             to: fromUser.accountId,
             toName: fromUser.name,
             text: buildBotReply(targetUser.name, safeText),
+            imageData: "",
             timestamp: Date.now(),
           };
           await saveMessage(reply);
@@ -1518,11 +1551,12 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("group-message", async ({ groupId, text }) => {
+  socket.on("group-message", async ({ groupId, text, imageData }) => {
     try {
       const fromUser = users.get(socket.id);
       const safeText = String(text || "").trim().slice(0, 2000);
-      if (!fromUser || !safeText || !groupId) {
+      const safeImageData = normalizeImageData(imageData);
+      if (!fromUser || (!safeText && !safeImageData) || !groupId) {
         return;
       }
 
@@ -1537,6 +1571,7 @@ io.on("connection", (socket) => {
         from: fromUser.accountId,
         fromName: fromUser.name,
         text: safeText,
+        imageData: safeImageData,
         timestamp: Date.now(),
       };
 
@@ -1583,12 +1618,13 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("status-create", async ({ text }) => {
+  socket.on("status-create", async ({ text, imageData }) => {
     try {
       const fromUser = users.get(socket.id);
       const safeText = String(text || "").trim().slice(0, 300);
+      const safeImageData = normalizeImageData(imageData);
 
-      if (!fromUser || !safeText) {
+      if (!fromUser || (!safeText && !safeImageData)) {
         return;
       }
 
@@ -1598,6 +1634,7 @@ io.on("connection", (socket) => {
         userId: fromUser.accountId,
         userName: fromUser.name,
         text: safeText,
+        imageData: safeImageData,
         createdAt: now,
         expiresAt: now + STATUS_TTL_MS,
       };

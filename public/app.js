@@ -36,8 +36,12 @@ const contactsEl = document.getElementById("contacts");
 const messagesEl = document.getElementById("messages");
 const chatForm = document.getElementById("chatForm");
 const chatInput = document.getElementById("chatInput");
+const chatImageBtn = document.getElementById("chatImageBtn");
+const chatImageInput = document.getElementById("chatImageInput");
 const statusForm = document.getElementById("statusForm");
 const statusInput = document.getElementById("statusInput");
+const statusImageBtn = document.getElementById("statusImageBtn");
+const statusImageInput = document.getElementById("statusImageInput");
 const statusList = document.getElementById("statusList");
 const chatTitle = document.getElementById("chatTitle");
 const chatHeader = document.querySelector(".chat-header");
@@ -73,6 +77,8 @@ let isGroupDetailsOpen = false;
 let peerConnection = null;
 let localStream = null;
 let currentPeerId = null;
+
+const MAX_UPLOAD_IMAGE_BYTES = 450 * 1024;
 
 function setMainTab(tab) {
   activeMainTab = tab === "status" ? "status" : "chat";
@@ -132,6 +138,79 @@ function fmtAge(ts) {
   if (mins < 60) return `vor ${mins} min`;
   const hours = Math.floor(mins / 60);
   return `vor ${hours} h`;
+}
+
+function openImage(dataUrl) {
+  const win = window.open("", "_blank");
+  if (!win) {
+    return;
+  }
+  win.document.write(`<img src="${dataUrl}" style="max-width:100%;height:auto;background:#111;display:block;margin:0 auto;" alt="Bild" />`);
+  win.document.title = "Bild";
+}
+
+function appendMessageBody(container, text, imageData) {
+  const safeText = String(text || "").trim();
+  const safeImageData = String(imageData || "").trim();
+
+  if (safeText) {
+    const textNode = document.createElement("div");
+    textNode.textContent = safeText;
+    container.appendChild(textNode);
+  }
+
+  if (safeImageData) {
+    const img = document.createElement("img");
+    img.className = "chat-image";
+    img.src = safeImageData;
+    img.alt = "Gesendetes Bild";
+    img.loading = "lazy";
+    img.onclick = () => openImage(safeImageData);
+    container.appendChild(img);
+  }
+}
+
+function appendStatusBody(container, text, imageData) {
+  const safeText = String(text || "").trim();
+  const safeImageData = String(imageData || "").trim();
+
+  if (safeText) {
+    const textNode = document.createElement("div");
+    textNode.textContent = safeText;
+    container.appendChild(textNode);
+  }
+
+  if (safeImageData) {
+    const img = document.createElement("img");
+    img.className = "status-image";
+    img.src = safeImageData;
+    img.alt = "Statusbild";
+    img.loading = "lazy";
+    img.onclick = () => openImage(safeImageData);
+    container.appendChild(img);
+  }
+}
+
+function readImageAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      reject(new Error("Kein Bild ausgewaehlt"));
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Bitte nur Bilddateien auswaehlen"));
+      return;
+    }
+    if (file.size > MAX_UPLOAD_IMAGE_BYTES) {
+      reject(new Error("Bild ist zu gross (max. 450KB)"));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Bild konnte nicht gelesen werden"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function getSelectedUser() {
@@ -267,7 +346,10 @@ function renderMessages() {
     conv.forEach((msg) => {
       const div = document.createElement("div");
       div.className = "bubble " + (msg.from === selfId ? "out" : "in");
-      div.innerHTML = `${msg.text}<small>${fmtTime(msg.timestamp)}</small>`;
+      appendMessageBody(div, msg.text, msg.imageData);
+      const timeNode = document.createElement("small");
+      timeNode.textContent = fmtTime(msg.timestamp);
+      div.appendChild(timeNode);
       messagesEl.appendChild(div);
     });
   }
@@ -280,7 +362,13 @@ function renderMessages() {
       const div = document.createElement("div");
       div.className = "bubble " + (msg.from === selfId ? "out" : "in");
       const sender = msg.from === selfId ? "Du" : msg.fromName;
-      div.innerHTML = `<strong>${sender}</strong><br>${msg.text}<small>${fmtTime(msg.timestamp)}</small>`;
+      const senderNode = document.createElement("strong");
+      senderNode.textContent = sender;
+      div.appendChild(senderNode);
+      appendMessageBody(div, msg.text, msg.imageData);
+      const timeNode = document.createElement("small");
+      timeNode.textContent = fmtTime(msg.timestamp);
+      div.appendChild(timeNode);
       messagesEl.appendChild(div);
     });
   }
@@ -299,9 +387,13 @@ function renderStatuses() {
   sorted.forEach((status) => {
     const li = document.createElement("li");
     li.className = "status-item";
-    li.innerHTML = `<strong>${status.userName}</strong><br>${status.text}<br><small>${fmtAge(
-      status.createdAt
-    )}</small>`;
+    const nameNode = document.createElement("strong");
+    nameNode.textContent = status.userName;
+    li.appendChild(nameNode);
+    appendStatusBody(li, status.text, status.imageData);
+    const ageNode = document.createElement("small");
+    ageNode.textContent = fmtAge(status.createdAt);
+    li.appendChild(ageNode);
     statusList.appendChild(li);
   });
 }
@@ -801,12 +893,69 @@ chatForm.addEventListener("submit", (event) => {
   chatInput.value = "";
 });
 
+chatImageBtn.addEventListener("click", () => {
+  if (!selectedTarget) {
+    alert("Bitte zuerst einen Chat oder eine Gruppe waehlen.");
+    return;
+  }
+  chatImageInput.click();
+});
+
+chatImageInput.addEventListener("change", async () => {
+  try {
+    if (!selectedTarget || !socket) {
+      return;
+    }
+
+    const file = chatImageInput.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const imageData = await readImageAsDataUrl(file);
+
+    if (selectedTarget.type === "user") {
+      socket.emit("private-message", { to: selectedTarget.id, text: "", imageData });
+    } else if (selectedTarget.type === "group") {
+      socket.emit("group-message", { groupId: selectedTarget.id, text: "", imageData });
+    }
+  } catch (err) {
+    alert(err.message || "Bild konnte nicht gesendet werden.");
+  } finally {
+    chatImageInput.value = "";
+  }
+});
+
 statusForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = statusInput.value.trim();
   if (!text || !socket) return;
   socket.emit("status-create", { text });
   statusInput.value = "";
+});
+
+statusImageBtn.addEventListener("click", () => {
+  statusImageInput.click();
+});
+
+statusImageInput.addEventListener("change", async () => {
+  try {
+    if (!socket) {
+      return;
+    }
+    const file = statusImageInput.files?.[0];
+    if (!file) {
+      return;
+    }
+    const imageData = await readImageAsDataUrl(file);
+    const text = statusInput.value.trim();
+    socket.emit("status-create", { text, imageData });
+    statusInput.value = "";
+  } catch (err) {
+    alert(err.message || "Status-Bild konnte nicht gesendet werden.");
+  } finally {
+    statusImageInput.value = "";
+  }
 });
 
 deleteContactBtn.addEventListener("click", () => {
