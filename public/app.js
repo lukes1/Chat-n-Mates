@@ -55,6 +55,9 @@ const statusInput = document.getElementById("statusInput");
 const statusDescriptionInput = document.getElementById("statusDescriptionInput");
 const statusImageBtn = document.getElementById("statusImageBtn");
 const statusImageInput = document.getElementById("statusImageInput");
+const statusImagePreview = document.getElementById("statusImagePreview");
+const statusImagePreviewImg = document.getElementById("statusImagePreviewImg");
+const clearStatusImageBtn = document.getElementById("clearStatusImageBtn");
 const statusList = document.getElementById("statusList");
 const chatTitle = document.getElementById("chatTitle");
 const chatHeader = document.querySelector(".chat-header");
@@ -109,6 +112,7 @@ let isCameraEnabled = true;
 let callStartedAt = 0;
 let callTimer = null;
 let remoteStream = null;
+let pendingStatusImageData = "";
 
 const MAX_UPLOAD_IMAGE_BYTES = 450 * 1024;
 
@@ -186,6 +190,13 @@ function setContactFeedback(message) {
 
 function setGroupFeedback(message) {
   groupFeedback.textContent = message || "";
+}
+
+function setPendingStatusImage(dataUrl) {
+  pendingStatusImageData = String(dataUrl || "");
+  const hasImage = !!pendingStatusImageData;
+  statusImagePreview.classList.toggle("is-hidden", !hasImage);
+  statusImagePreviewImg.src = hasImage ? pendingStatusImageData : "";
 }
 
 function setDialogOpen(dialog, open) {
@@ -850,6 +861,7 @@ function resetAppState() {
   setDialogOpen(contactDialog, false);
   setDialogOpen(groupDialog, false);
   setDialogOpen(requestsDialog, false);
+  setPendingStatusImage("");
   if (contactCount) {
     contactCount.textContent = "0";
   }
@@ -1233,10 +1245,11 @@ statusForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = statusInput.value.trim();
   const description = statusDescriptionInput.value.trim();
-  if (!text || !socket) return;
-  socket.emit("status-create", { text, description });
+  if ((!text && !pendingStatusImageData) || !socket) return;
+  socket.emit("status-create", { text, description, imageData: pendingStatusImageData });
   statusInput.value = "";
   statusDescriptionInput.value = "";
+  setPendingStatusImage("");
 });
 
 statusImageBtn.addEventListener("click", () => {
@@ -1253,16 +1266,16 @@ statusImageInput.addEventListener("change", async () => {
       return;
     }
     const imageData = await readImageAsDataUrl(file);
-    const text = statusInput.value.trim();
-    const description = statusDescriptionInput.value.trim();
-    socket.emit("status-create", { text, description, imageData });
-    statusInput.value = "";
-    statusDescriptionInput.value = "";
+    setPendingStatusImage(imageData);
   } catch (err) {
     alert(err.message || "Status-Bild konnte nicht gesendet werden.");
   } finally {
     statusImageInput.value = "";
   }
+});
+
+clearStatusImageBtn?.addEventListener("click", () => {
+  setPendingStatusImage("");
 });
 
 openRequestsBtn?.addEventListener("click", () => setDialogOpen(requestsDialog, true));

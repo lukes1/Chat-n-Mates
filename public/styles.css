@@ -1,4 +1,6 @@
-﻿:root {
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap");
+
+:root {
   --bg: #0d1516;
   --panel: #102126;
   --soft: #18343d;
@@ -6,6 +8,8 @@
   --text: #e7f7f1;
   --muted: #9dc2b4;
   --danger: #ff6a6a;
+  --radius-soft: 12px;
+  --ease-fast: 180ms ease;
 }
 
 * {
@@ -14,10 +18,11 @@
 
 body {
   margin: 0;
-  font-family: Segoe UI, Tahoma, sans-serif;
+  font-family: Manrope, "Segoe UI", Tahoma, sans-serif;
   background: linear-gradient(140deg, #0b1f21, #101918 55%, #123934);
   color: var(--text);
   min-height: 100vh;
+  background-attachment: fixed;
 }
 
 .is-hidden {
@@ -99,6 +104,7 @@ body {
   border: 1px solid #21424a;
   border-radius: 16px;
   overflow: hidden;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.25);
 }
 
 .sidebar,
@@ -166,6 +172,13 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  transition: transform var(--ease-fast), border-color var(--ease-fast), box-shadow var(--ease-fast);
+}
+
+.sidebar-card:hover {
+  transform: translateY(-2px);
+  border-color: #2f6874;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
 }
 
 .section-head {
@@ -212,6 +225,19 @@ body {
 
 .requests-btn.has-alert {
   box-shadow: 0 0 0 2px rgba(255, 106, 106, 0.35);
+  animation: pulse-alert 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse-alert {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 106, 106, 0.42);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 106, 106, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 106, 106, 0);
+  }
 }
 
 .section-list {
@@ -368,6 +394,13 @@ h3 {
   border-radius: 10px;
   padding: 10px;
   cursor: pointer;
+  transition: transform var(--ease-fast), background var(--ease-fast), box-shadow var(--ease-fast);
+}
+
+.contact-btn:hover {
+  transform: translateX(3px);
+  background: #24505c;
+  box-shadow: inset 0 0 0 1px #2e6874;
 }
 
 .add-contact-form {
@@ -450,6 +483,7 @@ h3 {
 
 .tab-btn.active {
   background: #1d8a57;
+  box-shadow: 0 0 0 2px rgba(38, 211, 103, 0.25);
 }
 
 .chat-header {
@@ -472,6 +506,13 @@ button {
   color: var(--text);
   padding: 8px 10px;
   cursor: pointer;
+  transition: transform var(--ease-fast), filter var(--ease-fast), box-shadow var(--ease-fast);
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.22);
 }
 
 button:disabled {
@@ -492,6 +533,12 @@ button:disabled {
   max-width: 80%;
   padding: 8px 10px;
   border-radius: 12px;
+  transition: transform var(--ease-fast), box-shadow var(--ease-fast);
+}
+
+.bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 14px rgba(0, 0, 0, 0.2);
 }
 
 .bubble.out {
@@ -604,12 +651,37 @@ textarea {
   background: var(--soft);
   border-radius: 10px;
   padding: 9px;
+  transition: transform var(--ease-fast), background var(--ease-fast);
+}
+
+.status-item:hover {
+  transform: translateY(-1px);
+  background: #214550;
 }
 
 .status-description {
   margin-top: 6px;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.status-image-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 12px 12px;
+  padding: 10px;
+  border: 1px solid #2f6874;
+  border-radius: var(--radius-soft);
+  background: rgba(22, 49, 57, 0.65);
+}
+
+#statusImagePreviewImg {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #2f6874;
 }
 
 .chat-image,
@@ -621,6 +693,13 @@ textarea {
   border: 1px solid #2d646f;
   margin-top: 6px;
   cursor: pointer;
+  transition: transform var(--ease-fast), box-shadow var(--ease-fast);
+}
+
+.chat-image:hover,
+.status-image:hover {
+  transform: scale(1.015);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.28);
 }
 
 .media-box {
@@ -640,6 +719,19 @@ video {
   margin-bottom: 8px;
   background: #000;
   max-height: 180px;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #2a5e6b, #1f4954);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.12);
 }
 
 @media (max-width: 1100px) {
@@ -694,3 +786,5 @@ video {
     grid-template-columns: 1fr;
   }
 }
+
+
