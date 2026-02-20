@@ -9,6 +9,7 @@ services:
     name: chatnmates
     env: node
     plan: free
+    autoDeploy: false
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
