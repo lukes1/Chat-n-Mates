@@ -73,6 +73,7 @@ let incomingRequests = [];
 let selectedTarget = null;
 let activeMainTab = "chat";
 let isGroupDetailsOpen = false;
+let isCallUiActive = false;
 
 let peerConnection = null;
 let localStream = null;
@@ -91,13 +92,40 @@ function setMainTab(tab) {
 }
 
 function setGroupDetailsOpen(open) {
+  if (selectedTarget?.type !== "group") {
+    isGroupDetailsOpen = false;
+    groupDetailsBox.classList.add("is-hidden");
+    toggleGroupDetailsBtn.classList.remove("active");
+    updateSidePanelVisibility();
+    return;
+  }
   isGroupDetailsOpen = !!open;
   groupDetailsBox.classList.toggle("is-hidden", !isGroupDetailsOpen);
-  toggleGroupDetailsBtn.textContent = isGroupDetailsOpen ? "Gruppendetails schliessen" : "Gruppendetails";
+  toggleGroupDetailsBtn.classList.toggle("active", isGroupDetailsOpen);
+  toggleGroupDetailsBtn.setAttribute("aria-label", isGroupDetailsOpen ? "Gruppendetails schliessen" : "Gruppendetails oeffnen");
+  updateSidePanelVisibility();
 }
 
 function setCallUiActive(active) {
-  mediaBox.classList.toggle("is-hidden", !active);
+  isCallUiActive = !!active;
+  mediaBox.classList.toggle("is-hidden", !isCallUiActive);
+  updateSidePanelVisibility();
+}
+
+function updateSidePanelVisibility() {
+  const isGroupSelected = selectedTarget?.type === "group";
+  const shouldShowPanel = isGroupSelected || isCallUiActive;
+  const shouldCompactPanel = shouldShowPanel && isGroupSelected && !isGroupDetailsOpen && !isCallUiActive;
+
+  toggleGroupDetailsBtn.classList.toggle("is-hidden", !isGroupSelected);
+  if (!isGroupSelected) {
+    groupDetailsBox.classList.add("is-hidden");
+    isGroupDetailsOpen = false;
+    toggleGroupDetailsBtn.classList.remove("active");
+  }
+
+  appRoot.classList.toggle("sidepanel-hidden", !shouldShowPanel);
+  appRoot.classList.toggle("sidepanel-compact", shouldCompactPanel);
 }
 
 const rtcConfig = {
@@ -245,6 +273,7 @@ function updateChatHeader() {
   videoCallBtn.disabled = !isUserChat;
   deleteContactBtn.disabled = !isUserChat;
   clearChatBtn.disabled = !(isUserChat || isGroupChat);
+  updateSidePanelVisibility();
 }
 
 function renderContacts() {
@@ -315,7 +344,7 @@ function renderGroups() {
     btn.textContent = group.name;
     btn.onclick = () => {
       selectedTarget = { type: "group", id: group.id };
-      setGroupDetailsOpen(true);
+      setGroupDetailsOpen(false);
       renderContacts();
       renderGroups();
       renderMessages();
@@ -584,6 +613,7 @@ function resetAppState() {
   setMainTab("chat");
   setGroupDetailsOpen(false);
   setCallUiActive(false);
+  updateSidePanelVisibility();
   renderGroupDetails();
 }
 

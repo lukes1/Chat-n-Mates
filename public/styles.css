@@ -78,6 +78,18 @@ body {
   min-height: 100dvh;
 }
 
+.app.sidepanel-hidden {
+  grid-template-columns: 260px minmax(300px, 1fr);
+}
+
+.app.sidepanel-hidden .status-panel {
+  display: none;
+}
+
+.app.sidepanel-compact {
+  grid-template-columns: 260px minmax(300px, 1fr) 72px;
+}
+
 .sidebar,
 .main,
 .status-panel {
@@ -91,6 +103,28 @@ body {
 .status-panel {
   padding: 14px;
   overflow-y: auto;
+}
+
+.status-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.group-details-toggle {
+  align-self: flex-end;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 999px;
+  padding: 0;
+  font-weight: 700;
+  border: 1px solid #3a7f8c;
+  background: linear-gradient(145deg, #1b5762, #23464f);
+}
+
+.group-details-toggle.active {
+  background: linear-gradient(145deg, #219a60, #1b7a52);
 }
 
 .brand {
