@@ -104,6 +104,7 @@ let isMuted = false;
 let isCameraEnabled = true;
 let callStartedAt = 0;
 let callTimer = null;
+let remoteStream = null;
 
 const MAX_UPLOAD_IMAGE_BYTES = 450 * 1024;
 
@@ -209,6 +210,9 @@ function stopCallTimer() {
 }
 
 function startCallTimer() {
+  if (callStartedAt) {
+    return;
+  }
   stopCallTimer();
   callStartedAt = Date.now();
   callDuration.textContent = "00:00";
@@ -642,6 +646,7 @@ function closePeerConnection() {
     peerConnection.close();
     peerConnection = null;
   }
+  remoteStream = null;
 }
 
 function stopLocalStream() {
@@ -684,6 +689,8 @@ async function ensureLocalStream(withVideo) {
 function createPeerConnection(targetId) {
   closePeerConnection();
   peerConnection = new RTCPeerConnection(rtcConfig);
+  remoteStream = new MediaStream();
+  remoteVideo.srcObject = remoteStream;
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
@@ -692,7 +699,14 @@ function createPeerConnection(targetId) {
   };
 
   peerConnection.ontrack = (event) => {
-    remoteVideo.srcObject = event.streams[0];
+    if (event.streams && event.streams[0]) {
+      remoteVideo.srcObject = event.streams[0];
+      return;
+    }
+    if (remoteStream) {
+      remoteStream.addTrack(event.track);
+      remoteVideo.srcObject = remoteStream;
+    }
   };
 
   peerConnection.onconnectionstatechange = () => {
@@ -741,6 +755,52 @@ async function startCall(withVideo) {
     alert("Kamera/Mikrofon nicht verfügbar.");
     resetCallState();
   }
+}
+
+function getVideoSender() {
+  if (!peerConnection) {
+    return null;
+  }
+  return peerConnection.getSenders().find((sender) => sender.track && sender.track.kind === "video") || null;
+}
+
+async function disableCamera() {
+  if (!localStream) {
+    return;
+  }
+  const videoTracks = localStream.getVideoTracks();
+  videoTracks.forEach((track) => {
+    track.stop();
+    localStream.removeTrack(track);
+  });
+  const sender = getVideoSender();
+  if (sender) {
+    await sender.replaceTrack(null);
+  }
+  isCameraEnabled = false;
+  localVideo.srcObject = localStream;
+  updateCallControlButtons();
+}
+
+async function enableCamera() {
+  if (!localStream) {
+    return;
+  }
+  const camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  const newTrack = camStream.getVideoTracks()[0];
+  if (!newTrack) {
+    return;
+  }
+  localStream.addTrack(newTrack);
+  const sender = getVideoSender();
+  if (sender) {
+    await sender.replaceTrack(newTrack);
+  } else if (peerConnection) {
+    peerConnection.addTrack(newTrack, localStream);
+  }
+  isCameraEnabled = true;
+  localVideo.srcObject = localStream;
+  updateCallControlButtons();
 }
 
 function teardownSocket() {
@@ -892,6 +952,7 @@ function bindSocketEvents() {
     if (!peerConnection || currentPeerId !== from) return;
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
     callStatusText.textContent = "Anruf angenommen";
+    startCallTimer();
   });
 
   socket.on("ice-candidate", async ({ from, candidate }) => {
@@ -1266,6 +1327,7 @@ callAcceptBtn.addEventListener("click", async () => {
     currentPeerId = from;
     pendingIncomingCall = null;
     hangupBtn.disabled = false;
+    startCallTimer();
     updateCallControlButtons();
     socket.emit("call-answer", { to: from, answer });
   } catch (_err) {
@@ -1286,20 +1348,19 @@ callMuteBtn.addEventListener("click", () => {
   updateCallControlButtons();
 });
 
-callCameraBtn.addEventListener("click", () => {
-  if (!localStream) {
-    return;
+callCameraBtn.addEventListener("click", async () => {
+  try {
+    if (!localStream) {
+      return;
+    }
+    if (isCameraEnabled) {
+      await disableCamera();
+    } else {
+      await enableCamera();
+    }
+  } catch (_err) {
+    alert("Kamera konnte nicht umgeschaltet werden.");
   }
-  const tracks = localStream.getVideoTracks();
-  if (!tracks.length) {
-    return;
-  }
-  const nextEnabled = !isCameraEnabled;
-  tracks.forEach((track) => {
-    track.enabled = nextEnabled;
-  });
-  isCameraEnabled = nextEnabled;
-  updateCallControlButtons();
 });
 
 emojiBar.addEventListener("click", (event) => {
