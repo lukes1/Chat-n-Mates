@@ -125,6 +125,8 @@ let pendingStatusImageData = "";
 let selfProfileImage = "";
 let pendingProfileImage = "";
 let toastContainer = null;
+const unreadDirect = new Map();
+const unreadGroups = new Map();
 
 const MAX_UPLOAD_IMAGE_BYTES = 450 * 1024;
 
@@ -136,6 +138,9 @@ function setMainTab(tab) {
   statusView.classList.toggle("is-hidden", showChat);
   chatTabBtn.classList.toggle("active", showChat);
   statusTabBtn.classList.toggle("active", !showChat);
+  if (showChat) {
+    clearUnreadForSelected();
+  }
 }
 
 function setGroupDetailsOpen(open) {
@@ -461,6 +466,27 @@ function getSelectedGroup() {
   return groups.find((g) => g.id === selectedTarget.id) || null;
 }
 
+function clearUnreadForSelected() {
+  if (!selectedTarget) {
+    return;
+  }
+  if (selectedTarget.type === "user") {
+    unreadDirect.delete(selectedTarget.id);
+    renderContacts();
+  }
+  if (selectedTarget.type === "group") {
+    unreadGroups.delete(selectedTarget.id);
+    renderGroups();
+  }
+}
+
+function getUnreadLabel(count) {
+  if (count > 99) {
+    return "99+";
+  }
+  return String(count);
+}
+
 function updateChatHeader() {
   const user = getSelectedUser();
   const group = getSelectedGroup();
@@ -518,6 +544,7 @@ function renderContacts() {
     avatar.alt = `${user.name} Profilbild`;
 
     const textWrap = document.createElement("div");
+    textWrap.className = "contact-label";
     const nameEl = document.createElement("div");
     nameEl.textContent = user.name;
     const stateEl = document.createElement("small");
@@ -527,8 +554,18 @@ function renderContacts() {
 
     btn.appendChild(avatar);
     btn.appendChild(textWrap);
+
+    const unread = unreadDirect.get(user.id) || 0;
+    if (unread > 0) {
+      const badge = document.createElement("span");
+      badge.className = "unread-badge";
+      badge.textContent = getUnreadLabel(unread);
+      btn.appendChild(badge);
+    }
+
     btn.onclick = () => {
       selectedTarget = { type: "user", id: user.id };
+      unreadDirect.delete(user.id);
       renderContacts();
       renderGroups();
       renderMessages();
@@ -571,9 +608,21 @@ function renderGroups() {
     const btn = document.createElement("button");
     const isActive = selectedTarget?.type === "group" && selectedTarget.id === group.id;
     btn.className = "contact-btn" + (isActive ? " active" : "");
-    btn.textContent = group.name;
+    const name = document.createElement("span");
+    name.textContent = group.name;
+    btn.appendChild(name);
+
+    const unread = unreadGroups.get(group.id) || 0;
+    if (unread > 0) {
+      const badge = document.createElement("span");
+      badge.className = "unread-badge";
+      badge.textContent = getUnreadLabel(unread);
+      btn.appendChild(badge);
+    }
+
     btn.onclick = () => {
       selectedTarget = { type: "group", id: group.id };
+      unreadGroups.delete(group.id);
       setGroupDetailsOpen(false);
       renderContacts();
       renderGroups();
@@ -961,6 +1010,8 @@ function resetAppState() {
   setPendingStatusImage("");
   pendingProfileImage = "";
   selfProfileImage = "";
+  unreadDirect.clear();
+  unreadGroups.clear();
   updateSelfAvatarUi();
   if (contactCount) {
     contactCount.textContent = "0";
@@ -1038,6 +1089,15 @@ function bindSocketEvents() {
 
   socket.on("private-message", (msg) => {
     messages.push(msg);
+    const isActiveChat =
+      msg.from !== selfId &&
+      activeMainTab === "chat" &&
+      selectedTarget?.type === "user" &&
+      selectedTarget.id === msg.from;
+    if (msg.from !== selfId && !isActiveChat) {
+      unreadDirect.set(msg.from, (unreadDirect.get(msg.from) || 0) + 1);
+      renderContacts();
+    }
     renderMessages();
     if (msg.from !== selfId) {
       const body = msg.text || "Bild erhalten";
@@ -1048,6 +1108,15 @@ function bindSocketEvents() {
 
   socket.on("group-message", (msg) => {
     groupMessages.push(msg);
+    const isActiveGroup =
+      msg.from !== selfId &&
+      activeMainTab === "chat" &&
+      selectedTarget?.type === "group" &&
+      selectedTarget.id === msg.groupId;
+    if (msg.from !== selfId && !isActiveGroup) {
+      unreadGroups.set(msg.groupId, (unreadGroups.get(msg.groupId) || 0) + 1);
+      renderGroups();
+    }
     renderMessages();
     if (msg.from !== selfId) {
       const body = msg.text || "Bild erhalten";
