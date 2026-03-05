@@ -608,7 +608,7 @@ async function createGroup(ownerId, name, memberUsernames) {
   }
 
   if (memberIds.size < 2) {
-    return { ok: false, error: "Fuege mindestens 1 Kontakt zur Gruppe hinzu" };
+    return { ok: false, error: "Füge mindestens 1 Kontakt zur Gruppe hinzu" };
   }
 
   const groupId = `grp-${uuidv4()}`;
@@ -728,7 +728,7 @@ async function addGroupMemberByUsername(ownerId, groupId, username) {
     return { ok: false, error: "Gruppe nicht gefunden" };
   }
   if (group.ownerId !== ownerId) {
-    return { ok: false, error: "Nur der Owner darf Mitglieder hinzufuegen" };
+    return { ok: false, error: "Nur der Owner darf Mitglieder hinzufügen" };
   }
 
   const account = await getAccountByUsername(username);
@@ -999,7 +999,7 @@ function buildBotReply(botName, inputText) {
   const text = inputText.toLowerCase();
 
   if (text.includes("hallo") || text.includes("hi")) {
-    return `${botName}: Moin, ich bin online. Test laeuft.`;
+    return `${botName}: Moin, ich bin online. Test läuft.`;
   }
   if (text.includes("?")) {
     return `${botName}: Gute Frage. Der Chat funktioniert auf jeden Fall.`;
@@ -1015,7 +1015,7 @@ function buildBotReply(botName, inputText) {
 
 function buildProactiveBotMessage(botName) {
   const cannedMessages = [
-    `${botName}: Wie laeuft dein Tag bisher?`,
+    `${botName}: Wie läuft dein Tag bisher?`,
     `${botName}: Falls du testest: Senden und Empfangen klappt.`,
     `${botName}: Soll ich dir noch eine Testnachricht schicken?`,
     `${botName}: Ich bin noch da, wenn du weiterschreiben willst.`,
@@ -1267,7 +1267,7 @@ io.on("connection", (socket) => {
       if (result.autoAccepted) {
         emitToAccount(fromUser.accountId, "contact-request-result", {
           ok: true,
-          message: `Kontakt mit ${target.username} wurde bestaetigt`,
+          message: `Kontakt mit ${target.username} wurde bestätigt`,
         });
         await Promise.all([
           emitUsersForAccount(fromUser.accountId),
@@ -1490,7 +1490,7 @@ io.on("connection", (socket) => {
       await Promise.all(memberIds.map((accountId) => emitGroupDetailsForAccount(accountId, groupId)));
       emitToAccount(currentUser.accountId, "group-create-result", {
         ok: true,
-        message: "Mitglied hinzugefuegt",
+        message: "Mitglied hinzugefügt",
       });
     } catch (_err) {
     }
@@ -1801,3 +1801,4 @@ main().catch((err) => {
   console.error("Startup failed:", err.message);
   process.exit(1);
 });
+

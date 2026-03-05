@@ -154,7 +154,7 @@ function setGroupDetailsOpen(open) {
   isGroupDetailsOpen = !!open;
   groupDetailsBox.classList.toggle("is-hidden", !isGroupDetailsOpen);
   toggleGroupDetailsBtn.classList.toggle("active", isGroupDetailsOpen);
-  toggleGroupDetailsBtn.setAttribute("aria-label", isGroupDetailsOpen ? "Gruppendetails schliessen" : "Gruppendetails oeffnen");
+  toggleGroupDetailsBtn.setAttribute("aria-label", isGroupDetailsOpen ? "Gruppendetails schließen" : "Gruppendetails öffnen");
   updateSidePanelVisibility();
 }
 
@@ -433,15 +433,15 @@ function appendStatusBody(container, text, imageData) {
 function readImageAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     if (!file) {
-      reject(new Error("Kein Bild ausgewaehlt"));
+      reject(new Error("Kein Bild ausgewählt"));
       return;
     }
     if (!file.type.startsWith("image/")) {
-      reject(new Error("Bitte nur Bilddateien auswaehlen"));
+      reject(new Error("Bitte nur Bilddateien auswählen"));
       return;
     }
     if (file.size > MAX_UPLOAD_IMAGE_BYTES) {
-      reject(new Error("Bild ist zu gross (max. 450KB)"));
+      reject(new Error("Bild ist zu groß (max. 450KB)"));
       return;
     }
 
@@ -1402,7 +1402,7 @@ chatForm.addEventListener("submit", (event) => {
 
 chatImageBtn.addEventListener("click", () => {
   if (!selectedTarget) {
-    alert("Bitte zuerst einen Chat oder eine Gruppe waehlen.");
+    alert("Bitte zuerst einen Chat oder eine Gruppe wählen.");
     return;
   }
   chatImageInput.click();
@@ -1690,3 +1690,4 @@ window.addEventListener("pagehide", disconnectPresence);
   showApp();
   connectSocket(token, user);
 })();
+
