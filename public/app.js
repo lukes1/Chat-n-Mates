@@ -181,22 +181,35 @@ function updateSidePanelVisibility() {
   appRoot.classList.toggle("sidepanel-compact", shouldCompactPanel);
 }
 
-const rtcConfig = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:openrelay.metered.ca:80" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-  ],
+let rtcConfig = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
+let hasRelayCandidate = false;
+let rtcConfigLoaded = false;
+
+async function loadRtcConfig() {
+  if (rtcConfigLoaded) {
+    return;
+  }
+  try {
+    const response = await fetch("/rtc-config", { cache: "no-store" });
+    if (response.ok) {
+      const payload = await response.json();
+      const servers = Array.isArray(payload?.iceServers) ? payload.iceServers : [];
+      if (servers.length) {
+        rtcConfig = { iceServers: servers };
+      }
+    }
+  } catch (_err) {
+  } finally {
+    rtcConfigLoaded = true;
+  }
+}
+
+function candidateIsRelay(candidate) {
+  const raw = String(candidate?.candidate || "").toLowerCase();
+  return raw.includes(" typ relay ");
+}
 
 function setAuthError(message) {
   authError.textContent = message || "";
@@ -871,11 +884,15 @@ async function ensureLocalStream(withVideo) {
 function createPeerConnection(targetId) {
   closePeerConnection();
   peerConnection = new RTCPeerConnection(rtcConfig);
+  hasRelayCandidate = false;
   remoteStream = new MediaStream();
   remoteVideo.srcObject = remoteStream;
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
+      if (candidateIsRelay(event.candidate)) {
+        hasRelayCandidate = true;
+      }
       socket.emit("ice-candidate", { to: targetId, candidate: event.candidate });
     }
   };
@@ -903,7 +920,9 @@ function createPeerConnection(targetId) {
       return;
     }
     if (peerConnection.connectionState === "failed" || peerConnection.connectionState === "disconnected") {
-      callStatusText.textContent = "Verbindung unterbrochen";
+      callStatusText.textContent = hasRelayCandidate
+        ? "Verbindung unterbrochen"
+        : "Verbindung fehlgeschlagen (TURN fehlt/gesperrt)";
     }
   };
 
@@ -919,7 +938,9 @@ function createPeerConnection(targetId) {
       startCallTimer();
     }
     if (peerConnection.iceConnectionState === "failed") {
-      callStatusText.textContent = "Video-Verbindung fehlgeschlagen";
+      callStatusText.textContent = hasRelayCandidate
+        ? "Video-Verbindung fehlgeschlagen"
+        : "Video-Verbindung fehlgeschlagen (TURN prüfen)";
     }
   };
 
@@ -931,6 +952,7 @@ async function startCall(withVideo) {
   if (!user || !socket) return;
 
   try {
+    await loadRtcConfig();
     setupCallDialog({
       title: withVideo ? `Videoanruf mit ${user.name}` : `Anruf mit ${user.name}`,
       status: "Rufe an...",
@@ -1206,6 +1228,9 @@ function bindSocketEvents() {
   socket.on("ice-candidate", async ({ from, candidate }) => {
     if (!peerConnection || currentPeerId !== from) return;
     try {
+      if (candidateIsRelay(candidate)) {
+        hasRelayCandidate = true;
+      }
       await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (_err) {
     }
@@ -1615,6 +1640,7 @@ callAcceptBtn.addEventListener("click", async () => {
   const { from, offer, withVideo, fromName } = pendingIncomingCall;
 
   try {
+    await loadRtcConfig();
     setupCallDialog({
       title: withVideo ? `Videoanruf mit ${fromName}` : `Anruf mit ${fromName}`,
       status: "Verbinde...",
@@ -1700,6 +1726,7 @@ window.addEventListener("pagehide", disconnectPresence);
 
 (async function bootstrapAuth() {
   authForm.dataset.mode = "login";
+  await loadRtcConfig();
   const token = getStoredToken();
 
   if (!token) {

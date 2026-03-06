@@ -31,6 +31,50 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
+function buildRtcIceServersFromEnv() {
+  const urlsRaw = String(process.env.RTC_ICE_URLS || "").trim();
+  const username = String(process.env.RTC_ICE_USERNAME || "").trim();
+  const credential = String(process.env.RTC_ICE_CREDENTIAL || "").trim();
+
+  if (!urlsRaw) {
+    return [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:openrelay.metered.ca:80" },
+      {
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443",
+        username: "openrelayproject",
+        credential: "openrelayproject",
+      },
+    ];
+  }
+
+  const urls = urlsRaw
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  if (!urls.length) {
+    return [{ urls: "stun:stun.l.google.com:19302" }];
+  }
+
+  if (username && credential) {
+    return [{ urls, username, credential }];
+  }
+
+  return [{ urls }];
+}
+
+app.get("/rtc-config", (_req, res) => {
+  res.status(200).json({
+    iceServers: buildRtcIceServersFromEnv(),
+  });
+});
+
 const sessions = new Map();
 const users = new Map();
 const socketsByAccount = new Map();
