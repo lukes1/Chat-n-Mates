@@ -128,6 +128,8 @@ let pendingProfileImage = "";
 let toastContainer = null;
 const unreadDirect = new Map();
 const unreadGroups = new Map();
+let callConnectTimeout = null;
+const CALL_CONNECT_TIMEOUT_MS = 15000;
 
 const MAX_UPLOAD_IMAGE_BYTES = 450 * 1024;
 
@@ -323,6 +325,37 @@ function stopCallTimer() {
   }
   callStartedAt = 0;
   callDuration.textContent = "00:00";
+}
+
+function clearCallConnectTimeout() {
+  if (!callConnectTimeout) {
+    return;
+  }
+  clearTimeout(callConnectTimeout);
+  callConnectTimeout = null;
+}
+
+function scheduleCallConnectTimeout() {
+  clearCallConnectTimeout();
+  callConnectTimeout = setTimeout(() => {
+    if (!peerConnection) {
+      return;
+    }
+    const state = String(peerConnection.connectionState || "");
+    const iceState = String(peerConnection.iceConnectionState || "");
+    const connected =
+      state === "connected" ||
+      iceState === "connected" ||
+      iceState === "completed";
+
+    if (connected) {
+      return;
+    }
+
+    callStatusText.textContent = hasRelayCandidate
+      ? "Verbindung dauert zu lange. Bitte erneut anrufen."
+      : "Verbindung dauert zu lange (TURN fehlt/gesperrt).";
+  }, CALL_CONNECT_TIMEOUT_MS);
 }
 
 function startCallTimer() {
@@ -853,6 +886,7 @@ function stopLocalStream() {
 }
 
 function resetCallState() {
+  clearCallConnectTimeout();
   closePeerConnection();
   stopLocalStream();
   remoteVideo.srcObject = null;
@@ -885,6 +919,7 @@ function createPeerConnection(targetId) {
   closePeerConnection();
   peerConnection = new RTCPeerConnection(rtcConfig);
   hasRelayCandidate = false;
+  scheduleCallConnectTimeout();
   remoteStream = new MediaStream();
   remoteVideo.srcObject = remoteStream;
 
@@ -915,6 +950,7 @@ function createPeerConnection(targetId) {
       return;
     }
     if (peerConnection.connectionState === "connected") {
+      clearCallConnectTimeout();
       callStatusText.textContent = "Verbunden";
       startCallTimer();
       return;
@@ -934,10 +970,12 @@ function createPeerConnection(targetId) {
       callStatusText.textContent = "Verbinde Medien...";
     }
     if (peerConnection.iceConnectionState === "connected" || peerConnection.iceConnectionState === "completed") {
+      clearCallConnectTimeout();
       callStatusText.textContent = "Verbunden";
       startCallTimer();
     }
     if (peerConnection.iceConnectionState === "failed") {
+      clearCallConnectTimeout();
       callStatusText.textContent = hasRelayCandidate
         ? "Video-Verbindung fehlgeschlagen"
         : "Video-Verbindung fehlgeschlagen (TURN prüfen)";
