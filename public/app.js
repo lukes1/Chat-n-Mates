@@ -86,6 +86,7 @@ const statusView = document.getElementById("statusView");
 const callDialog = document.getElementById("callDialog");
 const callDialogTitle = document.getElementById("callDialogTitle");
 const callStatusText = document.getElementById("callStatusText");
+const callMuteIndicator = document.getElementById("callMuteIndicator");
 const callDuration = document.getElementById("callDuration");
 const callVideoWrap = document.getElementById("callVideoWrap");
 const callAudioOnly = document.getElementById("callAudioOnly");
@@ -327,9 +328,13 @@ function updateCallControlButtons() {
   const hasVideoTrack = !!localStream?.getVideoTracks?.().length;
   const canToggleCamera = currentCallMode === "video" && hasVideoTrack;
 
-  callMuteBtn.textContent = isMuted ? "Entstummen" : "Stumm";
+  callMuteBtn.textContent = isMuted ? "🔊 Entstummen" : "🔇 Stumm";
   callCameraBtn.textContent = isCameraEnabled ? "Kamera aus" : "Kamera ein";
   callCameraBtn.disabled = !canToggleCamera;
+  if (callMuteIndicator) {
+    callMuteIndicator.classList.toggle("is-hidden", !isMuted);
+    callMuteIndicator.title = isMuted ? "Mikrofon ist stumm" : "";
+  }
 }
 
 function setCallMode(mode) {
@@ -878,11 +883,13 @@ function createPeerConnection(targetId) {
   peerConnection.ontrack = (event) => {
     if (event.streams && event.streams[0]) {
       remoteVideo.srcObject = event.streams[0];
+      remoteVideo.play().catch(() => {});
       return;
     }
     if (remoteStream) {
       remoteStream.addTrack(event.track);
       remoteVideo.srcObject = remoteStream;
+      remoteVideo.play().catch(() => {});
     }
   };
 
@@ -897,6 +904,22 @@ function createPeerConnection(targetId) {
     }
     if (peerConnection.connectionState === "failed" || peerConnection.connectionState === "disconnected") {
       callStatusText.textContent = "Verbindung unterbrochen";
+    }
+  };
+
+  peerConnection.oniceconnectionstatechange = () => {
+    if (!peerConnection) {
+      return;
+    }
+    if (peerConnection.iceConnectionState === "checking") {
+      callStatusText.textContent = "Verbinde Medien...";
+    }
+    if (peerConnection.iceConnectionState === "connected" || peerConnection.iceConnectionState === "completed") {
+      callStatusText.textContent = "Verbunden";
+      startCallTimer();
+    }
+    if (peerConnection.iceConnectionState === "failed") {
+      callStatusText.textContent = "Video-Verbindung fehlgeschlagen";
     }
   };
 
@@ -920,7 +943,10 @@ async function startCall(withVideo) {
     const pc = createPeerConnection(user.id);
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-    const offer = await pc.createOffer();
+    const offer = await pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: withVideo,
+    });
     await pc.setLocalDescription(offer);
 
     currentPeerId = user.id;
@@ -1626,6 +1652,7 @@ callMuteBtn.addEventListener("click", () => {
   });
   isMuted = nextMuted;
   updateCallControlButtons();
+  showMessageToast("Mikrofon", isMuted ? "Stumm geschaltet" : "Mikrofon aktiv");
 });
 
 callCameraBtn.addEventListener("click", async () => {
